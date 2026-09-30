@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>SpinKit Slot</title>
+  <link rel="stylesheet" href="/games/assets/fonts/fonts.css">
+  <link rel="stylesheet" href="/games/common/slot.css">
+</head>
+<body>
+  <div id="app" class="app loading">
+    <!-- themed background -->
+    <div class="bg-layer bg-base"></div>
+    <div class="bg-layer bg-scene" id="bgScene"></div>
+    <canvas id="bgFx" class="bg-layer"></canvas>
+
+    <!-- loading screen -->
+    <div id="loader" class="loader">
+      <div class="loader-logo" id="loaderLogo">SPINKIT</div>
+      <div class="loader-bar"><div id="loaderFill"></div></div>
+      <div class="loader-text" id="loaderText">LOADING...</div>
+    </div>
+
+    <!-- game stage -->
+    <main class="stage">
+      <div class="logo" id="logo">
+        <span class="logo-line1" id="logo1"></span>
+        <span class="logo-line2" id="logo2"></span>
+      </div>
+
+      <div class="jp-bar" id="jpBar" hidden></div>
+
+      <div class="play-row">
+        <aside class="side side-left">
+          <button class="buy-btn" id="btnBuy" hidden>
+            <span class="buy-title">BUY <br>FREE SPINS</span>
+            <span class="buy-price" id="buyPrice">$0.00</span>
+          </button>
+          <div class="info-plate" id="infoPlate">
+            <span class="info-small">WIN UP TO</span>
+            <span class="info-big" id="maxWinText">5,000x</span>
+            <span class="info-small">BET</span>
+          </div>
+        </aside>
+
+        <div class="reel-frame" id="reelFrame">
+          <div class="reel-bg" id="reelBg"></div>
+          <canvas id="slotCanvas"></canvas>
+          <div class="win-banner" id="winBanner">
+            <div class="win-banner-label" id="winBannerLabel">WIN</div>
+            <div class="win-banner-amount" id="winBannerAmount">$0.00</div>
+            <div class="win-banner-sub" id="winBannerSub"></div>
+          </div>
+          <div class="fs-counter" id="fsCounter">
+            <span>FREE SPINS</span>
+            <strong id="fsCounterValue">10</strong>
+          </div>
+        </div>
+
+        <aside class="side side-right">
+          <div class="mult-plate" id="multPlate" hidden>
+            <span class="info-small">TOTAL MULTIPLIER</span>
+            <span class="info-big" id="multPlateValue">x0</span>
+          </div>
+          <div class="info-plate ways-plate" id="waysPlate">
+            <span class="info-big" id="waysText">20</span>
+            <span class="info-small" id="waysLabel">LINES</span>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <!-- Pragmatic-style control bar -->
+    <footer class="bar" id="bar">
+      <div class="bar-left">
+        <button class="icon-btn" id="btnMenu" title="Menu" aria-label="Menu">
+          <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <button class="icon-btn" id="btnInfo" title="Paytable & rules" aria-label="Info">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+        </button>
+        <button class="icon-btn" id="btnSound" title="Sound" aria-label="Sound">
+          <svg viewBox="0 0 24 24" id="soundIcon"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" class="waves"/></svg>
+        </button>
+        <div class="meters">
+          <div class="meter">
+            <span class="meter-label">CREDIT</span>
+            <span class="meter-value" id="valBalance">$0.00</span>
+            <button class="refill-btn" id="btnRefill" title="Add free credits">+</button>
+          </div>
+          <div class="meter meter-bet" id="betMeter" title="Bet settings">
+            <span class="meter-label">BET</span>
+            <span class="meter-value" id="valBet">$0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bar-center">
+        <div class="message" id="message">PLACE YOUR BETS!</div>
+      </div>
+
+      <div class="bar-right">
+        <button class="round-btn small" id="btnTurbo" title="Quick spin" aria-label="Quick spin">
+          <svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+        </button>
+        <button class="round-btn" id="btnBetMinus" aria-label="Decrease bet">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="spin-btn" id="btnSpin" aria-label="Spin">
+          <svg class="spin-icon" viewBox="0 0 48 48"><path d="M38 24a14 14 0 1 1-4.1-9.9"/><path d="M34 6v8.5h-8.5"/></svg>
+          <span class="spin-count" id="spinCount"></span>
+        </button>
+        <button class="round-btn" id="btnBetPlus" aria-label="Increase bet">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg>
+        </button>
+        <button class="round-btn small" id="btnAuto" title="Autoplay" aria-label="Autoplay">
+          <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/><path d="M10 9l5 3-5 3z" class="fill"/></svg>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Big win celebration -->
+    <div class="bigwin" id="bigWin">
+      <canvas id="coinCanvas"></canvas>
+      <div class="bigwin-rays"></div>
+      <div class="bigwin-title" id="bigWinTitle">BIG WIN</div>
+      <div class="bigwin-amount" id="bigWinAmount">$0.00</div>
+    </div>
+
+    <!-- Feature intro / outro -->
+    <div class="feature-screen" id="featureScreen">
+      <div class="feature-card">
+        <div class="feature-kicker" id="featureKicker">CONGRATULATIONS!</div>
+        <div class="feature-line" id="featureLine1">YOU HAVE WON</div>
+        <div class="feature-big" id="featureBig">10</div>
+        <div class="feature-line" id="featureLine2">FREE SPINS</div>
+        <button class="feature-btn" id="featureBtn">PRESS TO CONTINUE</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <div class="test-badge" id="testBadge" hidden>TEST MODE</div>
+
+    <!-- Modals -->
+    <div class="modal" id="modalBet">
+      <div class="sheet">
+        <header><h2>BET SETTINGS</h2><button class="x" data-close>&times;</button></header>
+        <div class="bet-rows">
+          <div class="bet-row">
+            <span class="bet-row-label" id="betMultLabel">BET MULTIPLIER</span>
+            <div class="stepper"><span class="stepper-value" id="betMultValue">20x</span></div>
+          </div>
+          <div class="bet-row">
+            <span class="bet-row-label">COIN VALUE</span>
+            <div class="stepper">
+              <button data-bet="-1">&minus;</button><span class="stepper-value" id="coinValue">$0.10</span><button data-bet="1">+</button>
+            </div>
+          </div>
+          <div class="bet-row total">
+            <span class="bet-row-label">TOTAL BET</span>
+            <div class="stepper">
+              <button data-bet="-1">&minus;</button><span class="stepper-value" id="totalBetValue">$2.00</span><button data-bet="1">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="chip-grid" id="betChips"></div>
+        <button class="max-bet" id="btnMaxBet">MAX BET</button>
+      </div>
+    </div>
+
+    <div class="modal" id="modalAuto">
+      <div class="sheet">
+        <header><h2>AUTOPLAY SETTINGS</h2><button class="x" data-close>&times;</button></header>
+        <div class="field-label">NUMBER OF AUTOSPINS</div>
+        <div class="chip-grid" id="autoChips"></div>
+        <label class="toggle"><input type="checkbox" id="autoQuick"><span></span>QUICK SPIN</label>
+        <label class="toggle"><input type="checkbox" id="autoStopWin"><span></span>STOP ON ANY WIN</label>
+        <label class="toggle"><input type="checkbox" id="autoStopFeature" checked><span></span>STOP IF FREE SPINS ARE WON</label>
+        <div class="field-label">STOP IF SINGLE WIN EXCEEDS</div>
+        <div class="chip-grid" id="autoLimitChips"></div>
+        <button class="primary-btn" id="btnStartAuto">START AUTOPLAY (10)</button>
+      </div>
+    </div>
+
+    <div class="modal" id="modalInfo">
+      <div class="sheet wide">
+        <header><h2 id="infoTitle">PAYTABLE</h2><button class="x" data-close>&times;</button></header>
+        <div class="info-body" id="infoBody"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="modalBuy">
+      <div class="sheet narrow">
+        <header><h2>BUY FREE SPINS</h2><button class="x" data-close>&times;</button></header>
+        <p class="buy-question" id="buyQuestion"></p>
+        <div class="buy-cost" id="buyCost">$0.00</div>
+        <div class="confirm-row">
+          <button class="ghost-btn" data-close>NO</button>
+          <button class="primary-btn" id="btnBuyConfirm">YES</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="modalMenu">
+      <div class="sheet narrow">
+        <header><h2>MENU</h2><button class="x" data-close>&times;</button></header>
+        <button class="menu-item" id="menuLobby">⟵ BACK TO LOBBY</button>
+        <button class="menu-item" id="menuInfo">PAYTABLE &amp; RULES</button>
+        <button class="menu-item" id="menuSound">SOUND: ON</button>
+        <button class="menu-item" id="menuRefill">ADD FREE CREDITS</button>
+        <p class="menu-note" id="menuNote"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/games/common/kit.js"></script>
+  <script src="/games/common/audio.js"></script>
+  <script src="/games/common/sprites.js"></script>
+  <script src="/games/common/fx.js"></script>
+  <script src="/games/common/views/grid.js"></script>
+  <script src="/games/common/views/reels.js"></script>
+  <script src="/games/common/views/tumble.js"></script>
+  <script src="/games/common/views/giants.js"></script>
+  <script src="/games/common/views/megaways.js"></script>
+  <script src="/games/common/views/holdwin.js"></script>
+  <script src="/games/common/mechanics/lines.js"></script>
+  <script src="/games/common/mechanics/ways.js"></script>
+  <script src="/games/common/mechanics/tumble.js"></script>
+  <script src="/games/common/mechanics/giants.js"></script>
+  <script src="/games/common/mechanics/clusters.js"></script>
+  <script src="/games/common/mechanics/megaways.js"></script>
+  <script src="/games/common/mechanics/holdwin.js"></script>
+  <script src="/games/common/mechanics/matchlines.js"></script>
+  <script src="/games/common/slot-engine.js"></script>
+</body>
+</html>

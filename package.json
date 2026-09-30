@@ -1,0 +1,26 @@
+{
+  "name": "spinkit-rgs-hub",
+  "version": "1.0.0",
+  "description": "Autonomous RGS Server & Game Hub for Social Casino with Infinite Credits",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/rgs-engine.test.js && node test/giants.test.js && node test/clusters.test.js && node test/megaways.test.js && node test/holdwin.test.js && node test/matchlines.test.js && node test/ai-skins.test.js && node test/controller.test.js && node test/integration.test.js && node test/merchant-api.test.js",
+    "simulate": "node scripts/simulate.js",
+    "calibrate": "node scripts/simulate.js --calibrate --write --rounds 400000",
+    "new-game": "node scripts/new-game.js",
+    "golden": "node scripts/golden-master.js",
+    "art": "node scripts/gen-art.js",
+    "ai-art": "node scripts/gen-ai-art.js",
+    "thumbs": "node scripts/gen-thumbs.js"
+  },
+  "keywords": [
+    "rgs",
+    "slot-engine",
+    "social-casino",
+    "game-hub"
+  ],
+  "author": "SpinKit",
+  "license": "MIT"
+}

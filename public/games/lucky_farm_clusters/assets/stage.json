@@ -1,0 +1,12 @@
+{
+ "width": 1391,
+ "height": 1003,
+ "reels": {
+  "x": 380,
+  "y": 300,
+  "w": 632,
+  "h": 628
+ },
+ "pad": 8,
+ "image": "/games/lucky_farm_clusters/assets/stage.jpg"
+}

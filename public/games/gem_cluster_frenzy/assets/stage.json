@@ -1,0 +1,12 @@
+{
+ "width": 1237,
+ "height": 932,
+ "reels": {
+  "x": 338,
+  "y": 346,
+  "w": 562,
+  "h": 524
+ },
+ "pad": 8,
+ "image": "/games/gem_cluster_frenzy/assets/stage.jpg"
+}

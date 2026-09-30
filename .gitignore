@@ -1,0 +1,12 @@
+data/
+__pycache__/
+.env
+art-src/
+node_modules/
+backups/
+db-backup-*/
+*.tar.gz
+.sync-*
+.DS_Store
+*.db
+*.log

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpinKit - Social Casino Game Hub & RGS Server</title>
+  <link rel="stylesheet" href="/games/assets/fonts/fonts.css">
+  <link rel="stylesheet" href="/hub.css">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="hub-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-logo">🎰</div>
+        <div class="brand-text">
+          <h1>SpinKit RGS Hub</h1>
+          <p>Remote Game Server & Casino Lobby</p>
+        </div>
+      </div>
+
+      <div class="user-profile-bar">
+        <!-- Balance Display -->
+        <div class="balance-pill">
+          <span class="coin-icon">🪙</span>
+          <div>
+            <div class="balance-label">Balance</div>
+            <div class="balance-value" id="headerBalance">10,000,000</div>
+          </div>
+        </div>
+
+        <!-- Infinite Coins Refill Button -->
+        <button id="btnHubRefill" class="btn-refill-infinite" title="Add 10,000,000 free coins instantly">
+          <span>⚡</span> <span id="refillLabel">+ Free Credits</span>
+        </button>
+
+        <!-- User Profile Pill -->
+        <div class="user-badge">
+          <div class="avatar">VIP</div>
+          <span id="headerUsername">Player #49102</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="hub-nav">
+    <div class="nav-container">
+      <button class="nav-tab active" data-tab="lobby">
+        <span>🎰</span> Games Lobby
+      </button>
+      <button class="nav-tab" data-tab="audit">
+        <span>📜</span> RGS Audit & Live Feed
+      </button>
+      <button class="nav-tab" data-tab="sandbox">
+        <span>⚡</span> API Sandbox & Contracts
+      </button>
+      <a class="nav-tab" href="/docs" target="_blank" style="text-decoration:none"><span>📘</span> API Docs</a>
+      <a class="nav-tab" href="/admin" target="_blank" style="text-decoration:none"><span>🛡️</span> Back Office</a>
+    </div>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="hub-main">
+    <!-- TAB 1: Games Lobby -->
+    <section id="tab-lobby" class="tab-pane active">
+      <!-- Hero Banner -->
+      <div class="hero-banner">
+        <div class="hero-content">
+          <h2>Autonomous RGS & Social Casino Hub</h2>
+          <p>
+            114 HTML5 slots on 8 mechanics — paylines, 243 / 1024 ways, pay-anywhere tumble, 5×5 giant symbols with sticky x1–x500 multipliers, 7×7 cluster pays with x1024 multiplier spots, Megaways with up to 117,649 ways, Hold & Win with coin jackpots and 7×8 line cascades with multipliers up to x1024.
+            Server-side crypto RNG, math calibrated by simulation to ~96% RTP, feature buy,
+            free spins and a Pragmatic-style player UI.
+          </p>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat-card">
+            <div class="val" id="statRounds">0</div>
+            <div class="lbl">Total Spins</div>
+          </div>
+          <div class="hero-stat-card">
+            <div class="val" id="statGames">100</div>
+            <div class="lbl">Active Slots</div>
+          </div>
+          <div class="hero-stat-card">
+            <div class="val" style="color: #34d399;" id="statRtp">96%</div>
+            <div class="lbl">Avg RTP</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Categories -->
+      <div class="section-header lobby-controls">
+        <h3 class="section-title">All Slots <span id="gamesCount" class="games-count"></span></h3>
+        <div class="lobby-tools">
+          <input id="gameSearch" class="game-search" type="search" placeholder="Search games…" autocomplete="off">
+          <select id="themeSelect" class="theme-select"><option value="">All themes</option></select>
+        </div>
+        <div class="filter-chips" id="filterChips"></div>
+      </div>
+
+      <!-- Game Cards Grid -->
+      <div class="games-grid" id="gamesGrid">
+        <!-- Rendered dynamically via hub.js -->
+      </div>
+    </section>
+
+    <!-- TAB 2: RGS Live Audit & Transactions Feed -->
+    <section id="tab-audit" class="tab-pane">
+      <div class="audit-table-card">
+        <div class="table-header-bar">
+          <div>
+            <h3>RGS Spin Transactions Audit Log</h3>
+            <p style="font-size: 13px; color: var(--text-dim);">Live audit stream from database table <code>rgs_transactions</code></p>
+          </div>
+          <button id="btnRefreshAudit" class="btn-inspect-tx" style="padding: 8px 16px;">🔄 Refresh Feed</button>
+        </div>
+        <div class="table-responsive">
+          <table class="rgs-table">
+            <thead>
+              <tr>
+                <th>Round ID</th>
+                <th>Game</th>
+                <th>Bet Amount</th>
+                <th>Win Amount</th>
+                <th>Balance After</th>
+                <th>Type</th>
+                <th>Time</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: API Sandbox & Specifications Tester -->
+    <section id="tab-sandbox" class="tab-pane">
+      <div style="margin-bottom: 24px;">
+        <h3>RGS API Specification Tester</h3>
+        <p style="color: var(--text-muted); font-size: 14px;">
+          Test the exact endpoints specified in the Technical Specification (ТЗ).
+        </p>
+      </div>
+
+      <div class="api-sandbox-grid">
+        <!-- Endpoint 1: POST /api/v1/games/launch -->
+        <div class="api-card">
+          <div>
+            <span class="api-method">POST</span>
+            <span class="api-endpoint-title">/api/v1/games/launch</span>
+          </div>
+          <p class="api-desc">Generates a signed one-time launch URL with session token.</p>
+          <div class="json-box" id="reqBoxLaunch">{
+  "user_id": 49102,
+  "game_id": "pharaoh_riches"
+}</div>
+          <button class="btn-test-api" id="btnTestLaunch">Run Launch Request</button>
+          <div style="margin-top: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px;">RESPONSE:</div>
+            <div class="json-box" id="resBoxLaunch">// Response will appear here</div>
+          </div>
+        </div>
+
+        <!-- Endpoint 2: POST /api/v1/rgs/init -->
+        <div class="api-card">
+          <div>
+            <span class="api-method">POST</span>
+            <span class="api-endpoint-title">/api/v1/rgs/init</span>
+          </div>
+          <p class="api-desc">Initializes slot game, returns user balance, paytable and active state.</p>
+          <div class="json-box" id="reqBoxInit">{
+  "token": "c9b83b12-9c9e-4e89-9a7b-3b3df04523ef"
+}</div>
+          <button class="btn-test-api" id="btnTestInit">Run Init Request</button>
+          <div style="margin-top: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px;">RESPONSE:</div>
+            <div class="json-box" id="resBoxInit">// Response will appear here</div>
+          </div>
+        </div>
+
+        <!-- Endpoint 3: POST /api/v1/rgs/spin -->
+        <div class="api-card" style="grid-column: 1 / -1;">
+          <div>
+            <span class="api-method">POST</span>
+            <span class="api-endpoint-title">/api/v1/rgs/spin</span>
+          </div>
+          <p class="api-desc">Executes spin RNG, evaluates paylines & scatters, updates balance atomically.</p>
+          <div class="json-box" id="reqBoxSpin">{
+  "token": "c9b83b12-9c9e-4e89-9a7b-3b3df04523ef",
+  "bet_amount": 200
+}</div>
+          <button class="btn-test-api" id="btnTestSpin">Run Spin Request</button>
+          <div style="margin-top: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px;">RESPONSE:</div>
+            <div class="json-box" id="resBoxSpin" style="max-height: 400px;">// Response will appear here</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- In-Hub Game Player Overlay Modal -->
+  <div id="gameModal" class="game-modal-overlay">
+    <div class="game-modal-topbar">
+      <div class="game-modal-title" id="gameModalTitle">Playing Slot</div>
+      <div style="display: flex; gap: 10px;">
+        <button id="btnOpenNewTab" class="btn-close-modal" title="Open in dedicated tab">↗ Open Full Window</button>
+        <button id="btnCloseGameModal" class="btn-close-modal">✕ Close Game</button>
+      </div>
+    </div>
+    <iframe id="gameIframe" class="game-modal-iframe" allow="autoplay"></iframe>
+  </div>
+
+  <!-- Transaction Details Inspector Modal -->
+  <div id="txModal" class="game-modal-overlay" style="align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: #111622; border: 1px solid #232d42; border-radius: 16px; width: 100%; max-width: 650px; padding: 24px; position: relative;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3>Transaction Round Details</h3>
+        <button id="btnCloseTxModal" class="btn-close-modal">✕</button>
+      </div>
+      <div class="json-box" id="txModalContent" style="max-height: 450px;"></div>
+    </div>
+  </div>
+
+  <script src="/hub.js"></script>
+</body>
+</html>

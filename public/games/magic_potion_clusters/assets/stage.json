@@ -1,0 +1,12 @@
+{
+ "width": 1448,
+ "height": 924,
+ "reels": {
+  "x": 391,
+  "y": 245,
+  "w": 671,
+  "h": 607
+ },
+ "pad": 8,
+ "image": "/games/magic_potion_clusters/assets/stage.jpg"
+}

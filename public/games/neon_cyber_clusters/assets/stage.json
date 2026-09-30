@@ -1,0 +1,12 @@
+{
+ "width": 1278,
+ "height": 974,
+ "reels": {
+  "x": 349,
+  "y": 318,
+  "w": 581,
+  "h": 586
+ },
+ "pad": 8,
+ "image": "/games/neon_cyber_clusters/assets/stage.jpg"
+}

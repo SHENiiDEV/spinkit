@@ -1,0 +1,7 @@
+Symbol icons in this folder are Twemoji graphics
+Copyright 2019 Twitter, Inc and other contributors (jdecked/twemoji fork, v15)
+Graphics licensed under CC-BY 4.0: https://creativecommons.org/licenses/by/4.0/
+Source: https://github.com/jdecked/twemoji
+
+To use custom artwork instead, add `image: '/games/assets/<game>/<file>.png'`
+to a symbol in src/games/definitions/<id>.js - the client prefers `image` over the icon.

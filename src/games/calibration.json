@@ -1,0 +1,92 @@
+{
+  "gold_rush_canyon": {
+    "pay_scale": 1.243,
+    "rtp": "96.00%",
+    "hit_rate": "71.5%",
+    "fs_frequency": "1 in 289",
+    "buy_cost": 153
+  },
+  "wolf_moon_holdwin": {
+    "pay_scale": 1.698,
+    "rtp": "96.00%",
+    "hit_rate": "22.3%",
+    "fs_frequency": "1 in 263",
+    "buy_cost": 101
+  },
+  "jaguar_temple_megaways": {
+    "pay_scale": 0.0992,
+    "rtp": "96.00%",
+    "hit_rate": "63.0%",
+    "fs_frequency": "1 in 308",
+    "buy_cost": 175
+  },
+  "pharaoh_riches": {
+    "pay_scale": 4.1139,
+    "rtp": "96.19%",
+    "hit_rate": "31.9%",
+    "fs_frequency": "1 in 140",
+    "buy_cost": 40
+  },
+  "vegas_fruits": {
+    "pay_scale": 2.69,
+    "rtp": "96.07%",
+    "hit_rate": "23.3%",
+    "fs_frequency": null
+  },
+  "cyber_neon": {
+    "pay_scale": 1.0819,
+    "rtp": "95.67%",
+    "hit_rate": "36.4%",
+    "fs_frequency": "1 in 178",
+    "buy_cost": 70
+  },
+  "olympus_thunder": {
+    "pay_scale": 1.7117,
+    "rtp": "95.78%",
+    "hit_rate": "28.0%",
+    "fs_frequency": "1 in 440",
+    "buy_cost": 145
+  },
+  "sweet_sugar": {
+    "pay_scale": 2.8309,
+    "rtp": "96.00%",
+    "hit_rate": "28.4%",
+    "fs_frequency": "1 in 436",
+    "buy_cost": 115
+  },
+  "jade_dragon": {
+    "pay_scale": 0.9916,
+    "rtp": "96.29%",
+    "hit_rate": "46.7%",
+    "fs_frequency": "1 in 212",
+    "buy_cost": 55
+  },
+  "wild_safari": {
+    "pay_scale": 4.7268,
+    "rtp": "96.27%",
+    "hit_rate": "31.6%",
+    "fs_frequency": "1 in 139",
+    "buy_cost": 50
+  },
+  "enchanted_knight": {
+    "pay_scale": 0.169,
+    "rtp": "96.00%",
+    "hit_rate": "74.1%",
+    "fs_frequency": "1 in 217",
+    "buy_cost": 120
+  },
+  "sweet_spot_mania": {
+    "pay_scale": 0.733,
+    "rtp": "96.00%",
+    "hit_rate": "65.9%",
+    "fs_frequency": "1 in 283",
+    "buy_cost": 162
+  },
+  "tiki_titans": {
+    "pay_scale": 0.5896,
+    "rtp": "96.00%",
+    "hit_rate": "31.9%",
+    "fs_frequency": "1 in 210",
+    "buy_cost": 115
+  }
+}

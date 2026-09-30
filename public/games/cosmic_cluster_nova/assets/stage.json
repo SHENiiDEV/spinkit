@@ -1,0 +1,12 @@
+{
+ "width": 1355,
+ "height": 914,
+ "reels": {
+  "x": 370,
+  "y": 300,
+  "w": 616,
+  "h": 549
+ },
+ "pad": 8,
+ "image": "/games/cosmic_cluster_nova/assets/stage.jpg"
+}

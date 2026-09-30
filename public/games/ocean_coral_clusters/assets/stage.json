@@ -1,0 +1,12 @@
+{
+ "width": 1395,
+ "height": 1000,
+ "reels": {
+  "x": 381,
+  "y": 298,
+  "w": 634,
+  "h": 627
+ },
+ "pad": 8,
+ "image": "/games/ocean_coral_clusters/assets/stage.jpg"
+}

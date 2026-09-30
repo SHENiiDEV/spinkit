@@ -1,0 +1,165 @@
+# SpinKit — архитектура и как добавлять слоты
+
+Коротко: **игра = один файл с данными**, **механика = один модуль на сервере + один презентер в клиенте**. Всё остальное (ставки, фриспины, Feature Buy, лимит выигрыша, RTP-профили, кошелёк, API, админка, лобби) общее и про механики не знает.
+
+```
+src/
+  engine/                     математика (без знания о конкретных играх)
+    core/                     общие кирпичики
+      reels.js                ленты: окно, спин, выбор лент base/FS
+      evaluate.js             линии (evaluatePaylines), ways (evaluateWays), сумма выплат
+      cascade.js              гравитация для каскадов (collapseGrid / collapseColumns)
+      free-spins.js           скаттеры, выплаты скаттеров, начисление фриспинов, Feature Buy
+    mechanics/
+      index.js                реестр механик + значения по умолчанию для API
+      lines.js ways.js tumble.js giants.js clusters.js megaways.js holdwin.js matchlines.js
+    rgs.js                    спин: вызывает mechanic.play(), применяет фриспины, buy, max win
+    rng.js strips.js          RNG (crypto / seeded), генератор лент
+  games/                      каталог (данные)
+    definitions/<id>.js       шаблоны игр — по файлу на игру
+    definitions/index.js      порядок в лобби
+    kit.js                    хелперы для описаний: royal / icon / wild / scatter / reels / LINES_*
+    skins/classic.js          93 скина классических шаблонов (та же математика, новая тема)
+    skins/giants.js           9 скинов гигантов
+    skinning.js               применение скинов
+    calibration.json          pay_scale / RTP / цена Buy (пишет simulate.js)
+    build.js                  описание -> готовая игра (ставки, калибровка, mechanic.build)
+    catalog.js                GAMES_CATALOG, RTP-профили (getGame)
+public/games/common/          клиент (один на все игры)
+  kit.js                      SlotKit: реестр вьюх и механик, утилиты
+  views/*.js                  канвас-рендеры: GridView, ReelView, TumbleView, GiantReelView, MegawaysView, HoldWinView
+  mechanics/*.js              презентеры механик (анимация спина, правила, плашки)
+  slot-engine.js              UI-оболочка: ставки, автоигра, фриспины, big win, инфо
+scripts/
+  new-game.js                 генератор новой игры (npm run new-game)
+  simulate.js                 Monte-Carlo и калибровка RTP
+  gen-art.js + art/           процедурная графика (runner, painter-библиотеки, модули игр)
+  golden-master.js            «слепок» математики и API для проверки рефакторинга
+```
+
+## Новая игра на существующей механике (5 минут)
+
+```bash
+npm run new-game -- --list                                   # механики и их эталонные шаблоны
+npm run new-game -- --id desert_gold --name "Desert Gold" --mechanic lines
+# или от конкретного шаблона:
+npm run new-game -- --id desert_gold --name "Desert Gold" --from wild_safari
+```
+
+Скрипт создаёт `src/games/definitions/desert_gold.js` — полную редактируемую копию математики шаблона (без его графики, с его калибровкой), регистрирует игру в лобби и сразу проверяет её 3 000 спинов. Дальше:
+
+1. Правите файл: символы, paytable, ленты / веса, фриспины, тему.
+2. `node scripts/simulate.js --game desert_gold --calibrate --write` — подгонка RTP к 96% и цены Buy.
+3. Графика: положите картинки в `public/games/desert_gold/assets/` и укажите их в `theme.stage` / `symbol.image`, или напишите painter в `scripts/art/games/desert_gold.js` и запустите `node scripts/gen-art.js desert_gold`.
+4. Перезапустите сервер.
+
+**Скин** (та же математика, новая тема, калибровка не нужна) — одна запись в `src/games/skins/classic.js` или `skins/giants.js`, либо для любого шаблона файл `src/games/definitions/<id>.js` c `reskin(require('./<template>'), { id, name, theme, symbols })` из `kit.js` (пути картинок сами переезжают в `/games/<id>/assets/`).
+
+**Своя графика:** `scripts/import-art.py` (Pillow + numpy + scipy) — `sheet` режет листы символов с белого фона, `card`/`strip` вырезают персонажей и тотемы с тёмного фона, `stage --windows 2,4,5,...` чистит автомат и печатает `theme.stage` с `reel_rects` — окна барабанов в пикселях картинки, по ним клиент ставит каждый барабан (окна могут быть разного размера).
+
+## Поля описания игры
+
+Общие для всех механик:
+
+| поле | что это |
+|---|---|
+| `id`, `name`, `tagline`, `category` | идентификатор (snake_case), название, подзаголовок, категория лобби |
+| `mechanic` | одна из `src/engine/mechanics` |
+| `reels_count`, `rows_count` | сетка |
+| `bet_multiplier` | ставка = coin value × bet_multiplier (по умолчанию число линий или 20) |
+| `symbols` | `{ ID: royal(...) / icon(...) / wild(...) / scatter(...) }`; `image` — своя картинка вместо Twemoji |
+| `paytable` | `{ SYM: { count: pay } }` (единица зависит от механики, см. ниже); умножается на откалиброванный `pay_scale` |
+| `free_spins` | `trigger`, `spins` (число или `{ скаттеров: спинов }`), `retrigger_min`, `retrigger_spins`, `max_spins`, `win_multiplier`, `buy: true` |
+| `max_win_x`, `volatility` | лимит выигрыша (× ставка), волатильность |
+| `theme` | цвета, рамка, частицы, шрифт, `title`; `stage` — картинка всего автомата с прямоугольником барабанов; `cover` — обложка в лобби |
+
+Специфичные для механик:
+
+| механика | paytable в | данные |
+|---|---|---|
+| `lines` | × ставка на линию | `paylines`, `reels` / `fs_reels` (числа символов на ленте), `stacks` |
+| `ways` | × coin value на путь | `reels`, `free_spins.wild_multipliers` |
+| `tumble` | × общая ставка | `weights` / `fs_weights`, `multipliers` |
+| `giants` | × coin value на путь | `giants: { SYM: { height } }`, `reels`, `free_spins.sticky_giants`, `sticky_multipliers` |
+| `clusters` | × общая ставка | `weights`, `min_cluster`, `spots: { max }`, `free_spins.sticky_spots` |
+| `megaways` | × coin value на путь | `heights` / `fs_heights`, `reel_weights` / `fs_reel_weights`, `free_spins.persistent_multiplier` |
+| `holdwin` | × ставка на линию (монеты × общая ставка) | `paylines`, `reels` c `COIN`, `holdwin: { trigger, respins, land_chance, values, jackpots, jackpot_names, jackpot_weights, specials }` |
+| `matchlines` | × общая ставка | `weights`, `min_line`, `multiplier: { base: {start, step}, fs: {start, step}, max }`, `free_spins.persistent_multiplier` |
+
+Подробные комментарии — в шапке каждого файла `src/engine/mechanics/<id>.js`.
+
+## 50 игр с ИИ-графикой (OpenAI Images)
+
+`src/games/skins/ai.js` — 50 готовых тем: по 10 на Megaways, Cluster Pays, Hold & Win, Line Cascades и Titans (как Tiki Titans). Каждая игра — `reskin` шаблона (та же математика и RTP), у каждой своя сцена, логотип и названия всех символов. Игра появляется в лобби, только когда её графика импортирована.
+
+```bash
+# 1. ключ в SpinKit/.env (файл в .gitignore):  OPENAI_API_KEY=sk-...
+node scripts/gen-ai-art.js --list              # что готово
+node scripts/gen-ai-art.js --kind megaways     # или <id> / --all;  --dry = только показать промпты
+python3 scripts/import-ai-art.py --all         # нарезка в public/games/<id>/assets + stage.json
+# 2. перезапуск сервера — игры в лобби
+```
+
+`gen-ai-art.js` на игру рисует автомат (1536×1024) и листы символов с прозрачным фоном (у Titans ещё столб-Wild и карточку гиганта). `import-ai-art.py` находит окно барабанов (у Titans — 7 ступенчатых окон), режет листы, делает обложку и `stage.json`. Модель и качество: `OPENAI_IMAGE_MODEL` (по умолчанию gpt-image-1), `OPENAI_IMAGE_QUALITY` (high).
+
+## Новая механика
+
+### Сервер: `src/engine/mechanics/<id>.js`
+
+```js
+module.exports = {
+  id: 'my_mech',
+  label: 'My Mechanic',
+  paytableUnit: 'x total bet',                  // для Merchant API
+  waysCount: (raw) => ...,                       // необязательно: «способов» для лобби/клиента
+  build(game, raw, { seed, scale }) { ... },     // один раз при загрузке: ленты, веса, кэш
+  play(game, { bet, rng, inFreeSpins, forceTrigger, customStops, bonus }) {
+    return {
+      matrix, final_matrix?, stop_positions,     // экран (rows × cols)
+      winning_lines: [{ symbol, count, positions, multiplier, payout }],
+      scatter_win,                               // scatterResult(...) из core/free-spins или null
+      win,                                       // сумма всех выплат спина (в центах)
+      free_spins_awarded,
+      bonus,                                     // состояние между фриспинами (липкие символы, множитель...)
+      cascades?, ...                             // любые поля из RESULT_KEYS в mechanics/index.js
+    };
+  },
+  publicConfig: (game) => ({ ... }),             // необязательно: поля для клиента (/rgs/init)
+  publicFreeSpins: (game) => ({ ... }),          // необязательно: поля в config.free_spins
+  features: (game) => ({ ... })                  // необязательно: флаги в Merchant API
+};
+```
+
+Затем одна строка в списке `src/engine/mechanics/index.js`. Если механика возвращает новое поле спина — добавьте его в `RESULT_KEYS`, новое поле конфига — в `PUBLIC_DEFAULTS` (чтобы у всех игр оно было `null`).
+
+Готовые кирпичики: `spinReels` / `stripsFor` (ленты), `evaluatePaylines` / `evaluateWays` (выигрыши), `collapseGrid` / `collapseColumns` (каскады), `scatterPositions` / `scatterResult` / `forceScattersAnywhere` (скаттеры, фриспины, Buy). Правила платформы (фриспины, Buy, max win, RTP-профили) делает `rgs.js` — механике о них думать не нужно.
+
+### Клиент: `public/games/common/mechanics/<id>.js`
+
+```js
+SlotKit.mechanic('my_mech', {
+  cascading: true,                       // true: символы падают/взрываются (TumbleView), false: крутятся ленты
+  view: 'TumbleView',                    // или своя createView(game, canvas)
+  plate: (cfg) => ({ value: '8+', label: 'PAY ANYWHERE' }),
+  payUnit: (cfg, bet) => bet,            // во сколько раз умножать paytable для таблицы выплат
+  rules: (cfg, { bet, fmt }) => ['<p>…</p>'],
+  async present(game, r) {               // анимация результата спина
+    await game.view.dropIn(r.matrix, game.quick);
+    await game.runCascades(r, { suffix: (step) => '' });   // общий цикл каскадов с хуками
+    await game.finishCascades(r, r.final_matrix, 4);
+  }
+});
+```
+
+Все поля и значения по умолчанию — в `public/games/common/kit.js`. Добавьте `<script>` в `slot.html` (после views). Для совсем нового рендера — класс в `views/<name>.js`, регистрируется как `SlotKit.views.Name`.
+
+## Проверки
+
+```bash
+npm test                                            # движок, механики, контроллер, интеграция, Merchant API
+node scripts/golden-master.js --write /tmp/g.json   # слепок до изменений
+node scripts/golden-master.js --check /tmp/g.json   # после: все 114 игр должны совпасть бит в бит
+node scripts/simulate.js --game <id> --rounds 1000000
+```
+
+Golden master снимает хэши готовых описаний игр, клиентского конфига, ответа Merchant API и 150+ спинов (включая купленные фриспины) на фиксированном сиде: любой рефакторинг, который случайно меняет математику или контракт API, сразу виден.

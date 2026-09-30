@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SpinKit Back Office</title>
+  <link rel="stylesheet" href="/games/assets/fonts/fonts.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <!-- Login -->
+  <div class="login" id="login" hidden>
+    <form class="login-card" id="loginForm" autocomplete="on">
+      <div class="brand"><span class="brand-mark">SK</span><div><b>SpinKit</b><small>Back Office</small></div></div>
+      <label>Login<input name="username" autocomplete="username" required value="admin"></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary" type="submit">Sign in</button>
+      <p class="login-error" id="loginError"></p>
+      <p class="muted small">First start: the password is printed in the server console and saved to <code>data/admin-credentials.txt</code>.</p>
+    </form>
+  </div>
+
+  <!-- App -->
+  <div class="shell" id="shell" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">SK</span><div><b>SpinKit</b><small>Back Office</small></div></div>
+      <nav id="nav">
+        <a href="#/dashboard" data-page="dashboard"><i>◧</i>Dashboard</a>
+        <a href="#/merchants" data-page="merchants"><i>🏦</i>Merchants</a>
+        <a href="#/players" data-page="players"><i>👤</i>Players</a>
+        <a href="#/rtp" data-page="rtp"><i>🎯</i>RTP Manager</a>
+        <a href="#/jackpots" data-page="jackpots"><i>💎</i>Jackpots</a>
+        <a href="#/rounds" data-page="rounds"><i>🎰</i>Rounds</a>
+        <a href="#/ledger" data-page="ledger"><i>💳</i>Wallet ledger</a>
+        <a href="#/audit" data-page="audit"><i>📜</i>Audit log</a>
+        <a href="#/settings" data-page="settings"><i>⚙️</i>Settings</a>
+        <a href="/docs" target="_blank" class="ext"><i>📘</i>API docs ↗</a>
+        <a href="/" target="_blank" class="ext"><i>🕹️</i>Game lobby ↗</a>
+      </nav>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <h1 id="pageTitle">Dashboard</h1>
+        <div class="topbar-right">
+          <select id="merchantFilter" title="Merchant scope"></select>
+          <span class="who" id="who"></span>
+          <button class="btn ghost small" id="btnLogout">Log out</button>
+        </div>
+      </header>
+      <section class="content" id="content"></section>
+    </div>
+  </div>
+
+  <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
+  <div class="toast" id="toast"></div>
+
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

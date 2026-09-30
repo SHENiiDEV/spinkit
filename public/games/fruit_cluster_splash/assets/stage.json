@@ -1,0 +1,12 @@
+{
+ "width": 1353,
+ "height": 911,
+ "reels": {
+  "x": 369,
+  "y": 280,
+  "w": 615,
+  "h": 564
+ },
+ "pad": 8,
+ "image": "/games/fruit_cluster_splash/assets/stage.jpg"
+}
