@@ -223,4 +223,48 @@ console.log('✔ Test 5: start / shoot / cashout / seed flow, wallet and round r
 }
 console.log('✔ Test 6: Revenge boost (bet cap, one use)');
 
+// ------------------------------------------------------------------ 7. Fruit Slash: no wind, Frenzy bonus, one-step shield
+{
+  const fs = GAMES_CATALOG.fruit_slash;
+  const fc = fs.crash;
+  assert(fs && fs.category === 'exclusive' && fs.rtp === '96.50%');
+  assert.strictEqual(sc.windTier(fc, 9.9).bonus, 0, 'no wind in Fruit Slash');
+  // Frenzy keeps every step EV-neutral: E[factor] x chance = 1
+  for (const c of [0.92, 0.6, 0.3]) {
+    const s = fc.outcomes.frenzy;
+    const ev = c * (s * sc.clearFactor(fc, c, 'frenzy') + (1 - s) * sc.clearFactor(fc, c, 'clean'));
+    assert(Math.abs(ev - 1) < 1e-12, 'frenzy is EV-neutral');
+  }
+  assert.strictEqual(sc.ladder(fs, 'medium').length, 10);
+  const player = dbService.getUser(49104);
+  const t = gameService.launch({ merchant: merchants.get(1), player, gameId: 'fruit_slash', baseUrl: 'http://x' }).token;
+  const init = gameService.init(t);
+  assert.strictEqual(init.game_config.crash.waves.length, 10);
+  assert.strictEqual(init.game_config.crash.wind, null);
+  // force a state to test the shield: two cleared waves, then buy it and check price + one-use rule
+  let saved = 0; let tries = 0;
+  while (saved < 1 && tries++ < 300) {
+    let r = gameService.action(t, { action: 'start', bet: 200, mode: 'high' });
+    while (r.round) {
+      const q = r.next;
+      if (q.level >= 3) {
+        if (r.round.saves === 0) assert(q.helmet_price > 0, 'shield offered from wave 3');
+        else assert.strictEqual(q.helmet_price, null, 'one shield per round');
+      } else assert.strictEqual(q.helmet_price, null);
+      const before = r.round;
+      r = gameService.action(t, { action: 'shoot', helmet: q.helmet_price != null, expect_shot: q.shot_index });
+      if (r.shot.saved) {
+        saved++;
+        // one step back: the multiplier the round had before its last cleared wave
+        const prev = before.shots.filter((x) => x.multiplier).at(-2);
+        assert.strictEqual(r.round.multiplier, prev.multiplier, 'shield rolls back one step');
+        assert.strictEqual(r.round.level, before.level, 'same wave again');
+      }
+      if (r.round && r.round.level >= 4) r = gameService.action(t, { action: 'cashout' });
+    }
+  }
+  assert(saved >= 1, 'a shield save happened');
+}
+console.log('✔ Test 7: Fruit Slash — no wind, Frenzy bonus EV-neutral, one-step shield once per round');
+
 console.log('All SpinKit Exclusive tests passed.');

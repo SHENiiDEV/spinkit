@@ -5,5 +5,6 @@
  * (public/games/<client>/index.html, served at /games/<id>/).
  */
 module.exports = [
-  require('./apple_shooter')
+  require('./apple_shooter'),
+  require('./fruit_slash')
 ];

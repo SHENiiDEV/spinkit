@@ -55,7 +55,7 @@ const unlockedSkins = (game, st) => game.crash.skins.filter((s) => st.stats.shot
 
 function revengeView(game, st) {
   const r = st.revenge;
-  if (!r || Date.now() > r.until) return null;
+  if (!r || !game.crash.revenge || Date.now() > r.until) return null;
   return { bet_max: r.bet, expires_at: new Date(r.until).toISOString(), seconds_left: Math.ceil((r.until - Date.now()) / 1000), boost: game.crash.revenge.boost, from_level: r.level };
 }
 
@@ -68,7 +68,8 @@ function roundView(game, round) {
     boost: round.boost,
     nonce: round.nonce,
     level: round.level,
-    levels: game.crash.distances.length,
+    levels: sc.levelsOf(game.crash),
+    saves: round.saves || 0,
     multiplier: round.level > 0 ? sc.round2(round.multiplier) : null,
     cashout_value: round.level > 0 ? sc.payoutOf(round.bet, round.multiplier, game.max_win_x) : 0,
     side_staked: round.side_staked,
@@ -165,7 +166,7 @@ function start({ game, eff, merchant, user, st, session }, { bet: betIn, mode: m
 
   let boost = 1;
   const rv = st.revenge;
-  if (rv && Date.now() <= rv.until && bet <= rv.bet) {
+  if (rv && cfg.revenge && Date.now() <= rv.until && bet <= rv.bet) {
     boost = cfg.revenge.boost;
     st.revenge = null;
   } else if (rv && Date.now() > rv.until) {
@@ -190,6 +191,8 @@ function start({ game, eff, merchant, user, st, session }, { bet: betIn, mode: m
     balance_before: user.balance,
     level: 0,
     multiplier: cfg.rtp * boost,
+    prev_multiplier: null,
+    saves: 0,
     shot_index: 0,
     shots: [],
     side_staked: 0,
@@ -227,7 +230,7 @@ function shoot({ game, eff, merchant, user, st }, body) {
     sides.push({ id, stake: amount, odds: q.side_bets[id] });
   }
   const helmet = !!body.helmet;
-  if (helmet && q.helmet_price == null) throw bad('HELMET_UNAVAILABLE', `The helmet is available from level ${cfg.helmet.from_level}`);
+  if (helmet && q.helmet_price == null) throw bad('HELMET_UNAVAILABLE', cfg.helmet && cfg.helmet.max_saves && round.saves >= cfg.helmet.max_saves ? 'The save was already used in this round' : `Available from level ${cfg.helmet ? cfg.helmet.from_level : '-'}`);
   const cost = sides.reduce((s, x) => s + x.stake, 0) + (helmet ? q.helmet_price : 0);
   if (user.balance < cost) throw bad('INSUFFICIENT_FUNDS', 'Недостаточно средств.', { balance: user.balance, required: cost });
 
@@ -266,19 +269,22 @@ function shoot({ game, eff, merchant, user, st }, body) {
 
   let settled = null;
   if (saved) {
-    round.multiplier *= cfg.helmet.keep;
+    round.multiplier = sc.savedMultiplier(cfg, round);
+    round.saves = (round.saves || 0) + 1;
   } else if (lethal) {
-    if (q.level >= cfg.revenge.min_level) {
+    if (cfg.revenge && q.level >= cfg.revenge.min_level) {
       st.revenge = { until: Date.now() + cfg.revenge.window_sec * 1000, bet: round.bet, level: q.level };
     }
     settled = settle({ game, merchant, user, st }, 'lethal', 0);
   } else {
     round.level = q.level;
-    round.multiplier /= q.chance;
+    round.prev_multiplier = round.multiplier;
+    round.multiplier *= sc.clearFactor(cfg, q.chance, outcome);
+    if (cfg.bonus && outcome === cfg.bonus.outcome) shot.bonus = cfg.bonus.boost;
     st.stats.shots += 1;
     shot.multiplier = sc.round2(round.multiplier);
     const pay = sc.payoutOf(round.bet, round.multiplier, game.max_win_x);
-    if (round.level >= cfg.distances.length) settled = settle({ game, merchant, user, st }, 'top', pay);
+    if (round.level >= sc.levelsOf(cfg)) settled = settle({ game, merchant, user, st }, 'top', pay);
     else if (pay >= round.bet * game.max_win_x) settled = settle({ game, merchant, user, st }, 'max_win', pay);
   }
   return { shot: { ...shot, side_win: sideWin, cost }, settled };

@@ -1,5 +1,8 @@
 /**
- * Step crash — the math of SpinKit Exclusive ladder games (first one: Apple Shooter).
+ * Step crash — the math of SpinKit Exclusive ladder games (Apple Shooter, Fruit Slash).
+ *
+ * Optional per game: `wind` tiers (Apple Shooter), a bonus outcome that boosts the multiplier
+ * (Fruit Slash "Frenzy"), a save (helmet: keep a share / shield: one step back), Revenge.
  *
  * A round is a ladder of shots. Before each shot the server publishes the wind of that shot
  * (derived from the same Provably Fair hash as the outcome) and the chance to clear it:
@@ -11,6 +14,9 @@
  *   u >= chance -> LETHAL; otherwise u / chance falls into bullseye | hat_trick | near_miss | hit
  *
  *   multiplier  = rtp x boost / chance_1 / ... / chance_k      (boost = Revenge, else 1)
+ *
+ * Bonus outcome (share s, boost b): a clear multiplies by 1 / (chance x D), the bonus clear by b / (chance x D),
+ * D = 1 + s (b - 1), so the expected step stays exactly 1.
  *
  * The first shot has EV = rtp x bet, every later shot is EV-neutral (chance x step = 1),
  * so the main line pays exactly rtp for ANY cash-out strategy. The ladder multiplier is shown and
@@ -47,9 +53,26 @@ function cfgOf(game) {
   return game.crash;
 }
 
+const NO_WIND = { id: 'none', label: '', max: Infinity, bonus: 0 };
+
 function windTier(cfg, wind) {
+  if (!cfg.wind) return NO_WIND;
   const a = Math.abs(wind);
   return cfg.wind.find((t) => a <= t.max) || cfg.wind[cfg.wind.length - 1];
+}
+
+const levelsOf = (cfg) => Object.values(cfg.modes)[0].survival.length;
+
+/** D: keeps the step EV-neutral when a bonus outcome multiplies the ladder. */
+function bonusDivisor(cfg) {
+  const b = cfg.bonus;
+  return b ? 1 + (cfg.outcomes[b.outcome] || 0) * (b.boost - 1) : 1;
+}
+
+/** Multiplier factor of a cleared shot with the given outcome. */
+function clearFactor(cfg, chance, outcome) {
+  const boost = cfg.bonus && outcome === cfg.bonus.outcome ? cfg.bonus.boost : 1;
+  return boost / (chance * bonusDivisor(cfg));
 }
 
 function chanceOf(cfg, mode, level, tier) {
@@ -62,11 +85,12 @@ function outcomeOf(cfg, chance, u) {
   if (u >= chance) return 'lethal';
   const x = u / chance;
   let acc = 0;
-  for (const [id, share] of Object.entries(cfg.outcomes)) {
+  const entries = Object.entries(cfg.outcomes);
+  for (const [id, share] of entries) {
     acc += share;
     if (x < acc) return id;
   }
-  return 'hit';
+  return entries[entries.length - 1][0];
 }
 
 /** Probability of each outcome for a shot with the given chance. */
@@ -96,11 +120,20 @@ function payoutOf(bet, multiplier, maxWinX) {
   return maxWinX ? Math.min(pay, bet * maxWinX) : pay;
 }
 
-/** Fair helmet price for the next shot: keeps `keep` x current multiplier if the shot is lethal. */
+/** Multiplier the round keeps after a save: `keep` x current (helmet) or the previous step (shield). */
+function savedMultiplier(cfg, round) {
+  const h = cfg.helmet;
+  return h.step_back ? round.prev_multiplier : h.keep * round.multiplier;
+}
+
+/** Fair price of a save for the next shot = P(lethal) x value kept / save RTP; null when not offered. */
 function helmetPrice(cfg, round, chance) {
   const h = cfg.helmet;
   if (!h || round.level + 1 < h.from_level) return null;
-  return Math.max(1, Math.ceil((round.bet * h.keep * round.multiplier * (1 - chance)) / h.rtp));
+  if (h.max_saves && (round.saves || 0) >= h.max_saves) return null;
+  const kept = savedMultiplier(cfg, round);
+  if (!kept) return null;
+  return Math.max(1, Math.ceil((round.bet * kept * (1 - chance)) / h.rtp));
 }
 
 /**
@@ -113,11 +146,11 @@ function quote(game, round, seeds) {
   const { wind } = shotHash(seeds.server_seed, seeds.client_seed, round.nonce, round.shot_index);
   const tier = windTier(cfg, wind);
   const chance = chanceOf(cfg, round.mode, level, tier);
-  const next = round.multiplier / chance;
+  const next = round.multiplier * clearFactor(cfg, chance, null);
   return {
     level,
     shot_index: round.shot_index,
-    distance_m: cfg.distances[level - 1],
+    distance_m: cfg.distances ? cfg.distances[level - 1] : null,
     wind,
     wind_tier: tier.id,
     wind_label: tier.label,
@@ -134,7 +167,7 @@ function quote(game, round, seeds) {
 function ladder(game, mode, boost = 1) {
   const cfg = cfgOf(game);
   let m = cfg.rtp * boost;
-  return cfg.modes[mode].survival.map((p) => round2((m /= p)));
+  return cfg.modes[mode].survival.map((p) => round2((m *= clearFactor(cfg, p, null))));
 }
 
 // ------------------------------------------------------------------ mechanic descriptor
@@ -162,15 +195,17 @@ const mechanic = {
     return {
       crash: {
         rtp: c.rtp,
-        levels: c.distances.length,
-        distances: c.distances,
+        levels: levelsOf(c),
+        distances: c.distances || null,
+        waves: c.waves || null,
+        bonus: c.bonus || null,
         modes: Object.fromEntries(Object.entries(c.modes).map(([id, m]) => [id, { label: m.label, survival: m.survival, ladder: ladder(game, id) }])),
         default_mode: c.default_mode,
-        wind: c.wind.map((t) => ({ ...t, max: Number.isFinite(t.max) ? t.max : null })),
+        wind: c.wind ? c.wind.map((t) => ({ ...t, max: Number.isFinite(t.max) ? t.max : null })) : null,
         outcomes: c.outcomes,
         side_bets: Object.fromEntries(Object.entries(c.side_bets).map(([id, s]) => [id, { label: s.label, rtp: s.rtp, wins_on: s.wins_on, min_wind: s.min_wind || null }])),
         helmet: c.helmet,
-        revenge: c.revenge,
+        revenge: c.revenge || null,
         skins: c.skins
       }
     };
@@ -180,5 +215,5 @@ const mechanic = {
 
 module.exports = {
   mechanic, floor2, round2, newServerSeed, newClientSeed, hashSeed, shotHash,
-  windTier, chanceOf, outcomeOf, outcomeProbs, sideOdds, payoutOf, helmetPrice, quote, ladder
+  windTier, levelsOf, bonusDivisor, clearFactor, savedMultiplier, chanceOf, outcomeOf, outcomeProbs, sideOdds, payoutOf, helmetPrice, quote, ladder
 };

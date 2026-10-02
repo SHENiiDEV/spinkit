@@ -31,6 +31,7 @@ const pct = (v) => (v * 100).toFixed(3) + '%';
 
 /** Probability of each wind tier, exact over the 65,536 hash values. */
 function tierProbs(cfg) {
+  if (!cfg.wind) return [{ tier: sc.windTier(cfg, 0), p: 1 }];
   const counts = new Map(cfg.wind.map((t) => [t.id, 0]));
   for (let v = 0; v < 65536; v++) {
     const wind = Math.round((v / 65535 * 20 - 10) * 10) / 10;
@@ -46,7 +47,7 @@ function tierProbs(cfg) {
 function mainLine(game, mode, boost = 1) {
   const cfg = game.crash;
   const tiers = tierProbs(cfg);
-  const levels = cfg.distances.length;
+  const levels = sc.levelsOf(cfg);
   const ev = new Array(levels + 1).fill(0);
   const deathAt = new Array(levels + 1).fill(0);
   // depth-first over tier paths: (level cleared, multiplier, probability)
@@ -60,7 +61,14 @@ function mainLine(game, mode, boost = 1) {
     for (const { tier, p } of tiers) {
       const c = sc.chanceOf(cfg, mode, level + 1, tier);
       deathAt[level + 1] += prob * p * (1 - c);
-      walk(level + 1, mult / c, prob * p * c);
+      const b = cfg.bonus;
+      if (b) {
+        const s = cfg.outcomes[b.outcome];
+        walk(level + 1, mult * sc.clearFactor(cfg, c, b.outcome), prob * p * c * s);
+        walk(level + 1, mult * sc.clearFactor(cfg, c, null), prob * p * c * (1 - s));
+      } else {
+        walk(level + 1, mult * sc.clearFactor(cfg, c, null), prob * p * c);
+      }
     }
   })(0, cfg.rtp * boost, 1);
   return { ev, deathAt };
@@ -85,38 +93,38 @@ function sideRtp(game, mode, id, level) {
   return w ? r / w : null;
 }
 
-/** Exact helmet RTP on a level: return = P(lethal) x keep x multiplier; price rounded up. */
+/** Exact save (helmet / shield) RTP on a level, on the calm ladder: return = P(lethal) x value kept; price rounded up. */
 function helmetRtp(game, mode, level) {
   const cfg = game.crash;
   const tiers = tierProbs(cfg);
-  // typical multiplier before the level: calm ladder
-  const m = level > 1 ? cfg.rtp / cfg.modes[mode].survival.slice(0, level - 1).reduce((a, b) => a * b, 1) : cfg.rtp;
+  const calm = [cfg.rtp, ...sc.ladder(game, mode)];
+  const round = { bet: BET, level: level - 1, multiplier: calm.at(level - 1), prev_multiplier: level > 2 ? calm.at(level - 2) : null, saves: 0 };
   let w = 0;
   let r = 0;
   for (const { tier, p } of tiers) {
     const c = sc.chanceOf(cfg, mode, level, tier);
-    const price = sc.helmetPrice(cfg, { bet: BET, level: level - 1, multiplier: m }, c);
+    const price = sc.helmetPrice(cfg, round, c);
     w += p * price;
-    r += p * (1 - c) * cfg.helmet.keep * m * BET;
+    r += p * (1 - c) * sc.savedMultiplier(cfg, round) * BET;
   }
   return r / w;
 }
 
 const game = buildGame(raw);
 const cfg = game.crash;
-const levels = cfg.distances.length;
+const levels = sc.levelsOf(cfg);
 console.log(`${game.name} — exact RTP report (target ${pct(cfg.rtp)})`);
-console.log(`wind tiers: ${tierProbs(cfg).map(({ tier, p }) => `${tier.label} ${(p * 100).toFixed(1)}% (+${tier.bonus * 100}%)`).join(' · ')}\n`);
+if (cfg.wind) console.log(`wind tiers: ${tierProbs(cfg).map(({ tier, p }) => `${tier.label} ${(p * 100).toFixed(1)}% (+${tier.bonus * 100}%)`).join(' · ')}\n`);
 
 const summary = {};
 for (const mode of Object.keys(cfg.modes)) {
   const { ev, deathAt } = mainLine(game, mode);
-  const boosted = mainLine(game, mode, cfg.revenge.boost).ev;
+  const boosted = cfg.revenge ? mainLine(game, mode, cfg.revenge.boost).ev : null;
   console.log(`== ${cfg.modes[mode].label}   calm ladder ${sc.ladder(game, mode).map((m) => 'x' + m).join(' ')}`);
-  console.log('  main line, cash out after k shots:');
+  console.log('  main line, cash out after k steps:');
   console.log('   ' + ev.slice(1).map((v, i) => `${i + 1}: ${pct(v)}`).join('  '));
   const survive = (k) => 1 - deathAt.slice(1, k + 1).reduce((a, b) => a + b, 0);
-  console.log('  chance to clear k shots:');
+  console.log('  chance to clear k steps:');
   console.log('   ' + ev.slice(1).map((_, i) => `${i + 1}: ${(survive(i + 1) * 100).toFixed(2)}%`).join('  '));
   for (const id of Object.keys(cfg.side_bets)) {
     const per = [];
@@ -125,15 +133,17 @@ for (const mode of Object.keys(cfg.modes)) {
   }
   console.log(`  helmet (L${cfg.helmet.from_level}…${levels})      ${Array.from({ length: levels - cfg.helmet.from_level + 1 }, (_, i) => pct(helmetRtp(game, mode, i + cfg.helmet.from_level))).join(' ')}`);
   const rev = [];
-  for (let k = 1; k <= levels; k++) {
+  for (let k = 1; cfg.revenge && k <= levels; k++) {
     // trigger = lethal on a level >= min_level while chasing k
     let t = 0;
     for (let L = cfg.revenge.min_level; L <= k; L++) t += deathAt[L];
     const sess = (ev[k] + t * (boosted[k] - ev[k])) / 1; // each round: bet 1; boosted share = t
     rev.push(`${k}: ${pct(sess)}`);
   }
-  console.log(`  session RTP with Revenge x${cfg.revenge.boost.toFixed(4)} taken every time, chasing k:`);
-  console.log('   ' + rev.join('  '));
+  if (cfg.revenge) {
+    console.log(`  session RTP with Revenge x${cfg.revenge.boost.toFixed(4)} taken every time, chasing k:`);
+    console.log('   ' + rev.join('  '));
+  }
   console.log('');
   summary[mode] = { main: ev.slice(1) };
 }
@@ -152,7 +162,7 @@ if (MC > 0) {
           const h = sc.shotHash(s.server_seed, s.client_seed, 0, round.shot_index++);
           if (sc.outcomeOf(cfg, q.chance, h.u) === 'lethal') break;
           round.level++;
-          round.multiplier /= q.chance;
+          round.multiplier *= sc.clearFactor(cfg, q.chance, sc.outcomeOf(cfg, q.chance, h.u));
           if (round.level >= k) { ret += sc.payoutOf(BET, round.multiplier, game.max_win_x); break; }
         }
       }

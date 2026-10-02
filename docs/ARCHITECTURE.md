@@ -166,7 +166,7 @@ Golden master снимает хэши готовых описаний игр, к
 
 ## SpinKit Exclusive (не слоты)
 
-Категория лобби `exclusive` — собственные игры с раундом из нескольких запросов. Первая — **Apple Shooter** (ретро step crash).
+Категория лобби `exclusive` — собственные игры с раундом из нескольких запросов: **Apple Shooter** (ретро step crash с ветром) и **Fruit Slash** (свайп-нарезка волн с бомбами).
 
 ```
 src/games/exclusive/              описания игр (kind: 'exclusive', своя mechanic и свой client)
@@ -174,7 +174,9 @@ src/games/exclusive/              описания игр (kind: 'exclusive', с
 src/engine/exclusive/step-crash.js  математика + Provably Fair (чистые функции)
 src/engine/mechanics/step_crash.js  регистрация в реестре механик (stateful: true)
 src/services/exclusive-service.js   раунд, кошелёк, запись раунда в rgs_transactions
+  fruit_slash.js                  волны, фрукты/бомбы, Frenzy Banana (бонус ×1.5), Samurai Shield (шаг назад, 1 раз)
 public/games/apple_shooter/       свой клиент: index.html, style.css, scene.js (canvas 400×225), game.js, sfx.js
+public/games/fruit_slash/         свой клиент: canvas 960×540 в разрешении экрана, свайп-лезвие, авто-нарезка под исход
 scripts/simulate-exclusive.js     точный расчёт RTP (+ --mc N: Monte-Carlo на настоящем HMAC)
 test/exclusive.test.js            математика, PF, денежный поток, проверка раундов раскрытым сидом
 ```
@@ -199,3 +201,7 @@ test/exclusive.test.js            математика, PF, денежный п�
 **Прицел косметический**: угол и натяжение только рисуют полёт, сервер логирует их в `details.shots[].aim`, но не использует. Об этом сказано в правилах игры.
 
 Каждый раунд — одна строка `rgs_transactions` (`bet_type = 'step_crash'`): `bet_amount` = ставка + сайд-беты + шлемы, `details.shots` — все выстрелы с хэшами, шансами, ветром и ставками; по раскрытому сиду раунд проверяется целиком.
+
+**Опции движка step crash** (в `crash` описания игры): `wind` — тиры ветра (без него ветра нет); `bonus: { outcome, boost }` — исход, умножающий лестницу (шаг делится на D = 1 + доля × (boost − 1), поэтому остаётся EV-нейтральным); `helmet: { from_level, keep }` — сохраняет долю множителя, или `{ from_level, step_back: true, max_saves }` — откат на шаг назад; `revenge` — необязателен. Новая игра этого типа = файл в `src/games/exclusive/` + клиент в `public/games/<client>/`.
+
+**Fruit Slash.** Medium = шансы из GDD (92 … 40%); множители ниже GDD на D = 1.02 за волну, потому что Frenzy Banana (4% очищенных волн, ×1.5) уже включён в RTP: Medium x1.03 … x35.11, High x1.18 … x599. RTP основной ставки 96.29–96.83% при кэшауте на 1–3 волнах (округление до 0.01 без ветра не усредняется), дальше 96.4–96.6%. Свайп косметический: исход волны известен до броска, клиент дорезает нужное сам, «безопасные» бомбы уходят от лезвия.
