@@ -6,6 +6,7 @@
  * The client formats amounts using the currency block below, the same way
  * Pragmatic Play style clients show "CREDIT $100,000.00  BET $2.00".
  */
+try { if (typeof process.loadEnvFile === 'function') process.loadEnvFile(); } catch {}
 
 const CURRENCY = {
   code: process.env.SPINKIT_CURRENCY || 'USD', // ISO code used for Intl formatting ('FUN' => coins)

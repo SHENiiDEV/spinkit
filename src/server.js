@@ -1,3 +1,4 @@
+try { if (typeof process.loadEnvFile === 'function') process.loadEnvFile(); } catch {}
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
