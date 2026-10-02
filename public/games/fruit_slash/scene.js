@@ -136,7 +136,7 @@
       for (const o of this.objs) {
         if (o.done) continue;
         const d = segDist(o.x, o.y, a.x, a.y, b.x, b.y);
-        const reach = o.r * (o.kind === 'bomb' ? 0.9 : 1.25); // fruit hitboxes are wider than they look
+        const reach = o.r * (o.kind === 'bomb' ? 1 : 1.5); // fruit hitboxes are wider than they look
         if (d > reach) continue;
         if (o.kind === 'bomb') {
           if (o.role === 'killer' && !auto) this.detonate(o);
@@ -230,7 +230,7 @@
         rot: rnd(0, TAU),
         vr: rnd(-2.4, 2.4),
         delay: p.at,
-        due: p.at + T + (p.auto != null ? p.auto : 0.18),
+        due: p.at + T + (p.auto != null ? p.auto : 0.35),
         age: 0,
         done: false
       });
@@ -363,7 +363,11 @@
         }
         if (o.kind === 'bomb' && Math.random() < 0.6) this.parts.push({ x: o.x + Math.cos(o.rot - 1) * o.r * 0.9, y: o.y + Math.sin(o.rot - 1) * o.r * 0.9 - 4, vx: rnd(-40, 40), vy: rnd(-80, -20), g: 0, life: 0.25, c: Math.random() < 0.5 ? '#ffd23f' : '#ff7a1a', s: 2.2 });
         // the result must happen: finish what the outcome needs once the object starts to fall
-        if (w && !o.demo && o.age + o.at >= o.due && o.delay <= 0) this.autoFinish(o);
+        // the player gets the whole flight: fruit (and a bomb to deflect) are only finished for them
+        // on the way out, just before they leave the screen; a lethal bomb goes off after its peak
+        const late = o.vy > 0 && o.y > H - 120;
+        const killer = o.kind === 'bomb' && o.role === 'killer';
+        if (w && !o.demo && o.delay <= 0 && (killer ? o.age + o.at >= o.due : late)) this.autoFinish(o);
         if (o.y > H + 120 && o.vy > 0) o.done = true;
       }
       // halves and props
@@ -406,7 +410,7 @@
         return;
       }
       if (o.escape || w.lethalDone) return;
-      if (w.lethal && !w.lethalDone) { o.due += 0.15; o.finished = false; return; } // let the bomb go first
+      if (w.lethal && !w.lethalDone) { o.finished = false; return; } // the bomb goes first
       if (o.combo && !w.comboDone) { this.cutAlong({ x: o.x - 60, y: o.y }, { x: o.x + 60, y: o.y }, true); return; }
       const a = rnd(-0.8, 0.8);
       this.autoSlashes.push({ x1: o.x - Math.cos(a) * 70, y1: o.y - Math.sin(a) * 70, x2: o.x + Math.cos(a) * 70, y2: o.y + Math.sin(a) * 70, life: 0.3 });
