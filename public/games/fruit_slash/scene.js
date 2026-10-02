@@ -1,15 +1,15 @@
 /*
  * Fruit Slash — canvas scene (logical 960x540, drawn at device resolution).
  *
- * Purely visual. The game tells the scene what the server decided for a wave
- * (outcome, shield save) and the scene throws fruit and bombs so that whatever the player
- * swipes ends on that result: fruit snaps to the blade, harmless bombs slip away from it,
- * and anything the result needs that the player did not do is finished by an automatic slash.
+ * Before a wave the player swipes across the 8 lanes to set the cut (scene.onCut). The game sends
+ * that cut to the server, which only then builds the wave from the fair hash and resolves it.
+ * The scene throws exactly that wave (lanes 'F' / 'B' / '-') so every object peaks at the cut line,
+ * and the blade runs along the committed line: what is in the cut is cut, nothing else is touched.
  *
  * API:
- *   scene.setSkin(id) · setMultiplier(text) · setShield(bool) · setIdle(bool)
- *   await scene.playWave({ wave, index, outcome, saved, boost }) → resolves when the wave is over
- *   scene.banner(text, sub, tone) · scene.coins(n)
+ *   scene.setSkin(id) · setMultiplier(text) · setShield(bool) · setDrawing(on, maxWidth) · setCut(c)
+ *   await scene.playLanes({ lanes, dragon, cut, steps, saved, outcome, index })
+ *   scene.banner(text, sub, tone) · scene.coins(x, y, n)
  */
 (function () {
   const W = 960;
@@ -46,6 +46,14 @@
   const COMMON = ['apple', 'orange', 'lime', 'lemon', 'plum', 'peach', 'kiwi'];
 
   // ---------------------------------------------------------------- scene
+  const LANES = 8;
+  const LX0 = 90;
+  const LW = (W - 2 * LX0) / LANES; // lane width
+  const laneX = (i) => LX0 + LW * (i + 0.5);
+  const laneAt = (x) => clamp(Math.floor((x - LX0) / LW), 0, LANES - 1);
+  const LINE_MIN = 150;
+  const LINE_MAX = 330;
+
   class Scene {
     constructor(canvas) {
       this.canvas = canvas;
@@ -56,20 +64,19 @@
       this.parts = [];
       this.splats = [];
       this.texts = [];
-      this.trail = [];
-      this.autoSlashes = [];
       this.petals = Array.from({ length: 26 }, () => this.newPetal(true));
       this.t = 0;
-      this.timeScale = 1;
-      this.slowUntil = 0;
       this.flash = 0;
       this.soot = 0;
       this.shake = 0;
       this.mult = '';
       this.shieldOn = false;
-      this.idle = true;
-      this.nextDemo = 1.2;
+      this.cut = null; // { from, to, y } — the committed line
+      this.draft = null; // the line being drawn
+      this.canDraw = false;
+      this.sweep = null;
       this.wave = null;
+      this.laneInfo = null; // { fruits, bombs, empties } of the coming wave, for the hint
       this.resize();
       new ResizeObserver(() => this.resize()).observe(canvas);
       this.bindInput();
@@ -96,155 +103,111 @@
     setSkin(id) { this.blade = BLADES[id] || BLADES.steel; }
     setMultiplier(s) { this.mult = s || ''; }
     setShield(on) { this.shieldOn = !!on; }
-    setIdle(on) { this.idle = !!on; }
+    /** Allows drawing the cut; maxWidth = widest span the wave offers. */
+    setDrawing(on, maxWidth = LANES) { this.canDraw = !!on; this.maxWidth = maxWidth; if (this.cut && this.cut.to - this.cut.from + 1 > maxWidth) this.setCut(null); }
+    setCut(c) { this.cut = c; if (this.onCut) this.onCut(c); }
+    clearWave() { this.objs = []; }
 
-    // -------------------------------------------------------------- input: the blade
+    // -------------------------------------------------------------- input: drawing the cut before the wave
     bindInput() {
       const c = this.canvas;
       const pos = (e) => {
         const r = c.getBoundingClientRect();
-        return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H, t: performance.now() };
+        return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
       };
-      let down = false;
-      let lastSwish = 0;
+      let start = null;
       c.addEventListener('pointerdown', (e) => {
+        if (!this.canDraw) return;
         if (window.SFX) window.SFX.unlock();
-        down = true;
-        this.stroke = (this.stroke || 0) + 1;
-        this.trail = [pos(e)];
+        start = pos(e);
+        this.draft = { a: start, b: start };
         c.setPointerCapture(e.pointerId);
       });
       c.addEventListener('pointermove', (e) => {
-        if (!down) return;
-        const p = pos(e);
-        const prev = this.trail.at(-1);
-        this.trail.push(p);
-        if (prev) {
-          const speed = Math.hypot(p.x - prev.x, p.y - prev.y) / Math.max(1, p.t - prev.t) * 1000;
-          if (speed > 900 && p.t - lastSwish > 160 && window.SFX) { window.SFX.swish(speed / 1800); lastSwish = p.t; }
-          if (speed > 280) this.cutAlong(prev, p, false);
-        }
+        if (!start) return;
+        this.draft.b = pos(e);
       });
-      const up = () => { down = false; };
+      const up = () => {
+        if (!start || !this.draft) return;
+        const { a, b } = this.draft;
+        let from = laneAt(Math.min(a.x, b.x));
+        let to = laneAt(Math.max(a.x, b.x));
+        const max = this.maxWidth || LANES;
+        if (to - from + 1 > max) { if (b.x >= a.x) to = from + max - 1; else from = to - max + 1; }
+        const y = clamp((a.y + b.y) / 2, LINE_MIN, LINE_MAX);
+        this.draft = null;
+        start = null;
+        if (window.SFX) window.SFX.swish(1);
+        this.setCut({ from, to, y });
+      };
       c.addEventListener('pointerup', up);
-      c.addEventListener('pointercancel', up);
+      c.addEventListener('pointercancel', () => { this.draft = null; start = null; });
     }
 
-    /** A blade segment passes over the field: cut / deflect / detonate what it touches. */
-    cutAlong(a, b, auto) {
-      const w = this.wave;
-      for (const o of this.objs) {
-        if (o.done) continue;
-        const d = segDist(o.x, o.y, a.x, a.y, b.x, b.y);
-        const reach = o.r * (o.kind === 'bomb' ? 1 : 1.5); // fruit hitboxes are wider than they look
-        if (d > reach) continue;
-        if (o.kind === 'bomb') {
-          if (o.role === 'killer' && !auto) this.detonate(o);
-          else if (o.role === 'deflect') this.deflect(o, b.x - a.x, b.y - a.y);
-          continue; // harmless bombs slide past the blade (see update: they are pushed away)
-        }
-        if (o.escape) continue;
-        if (w && w.lethalDone) continue;
-        if (o.combo && w && !w.comboDone) {
-          w.comboDone = true;
-          const set = this.objs.filter((x) => x.combo && !x.done);
-          set.forEach((x) => this.slice(x, b.x - a.x, b.y - a.y));
-          const cx = set.reduce((s, x) => s + x.x, 0) / set.length;
-          const cy = set.reduce((s, x) => s + x.y, 0) / set.length;
-          this.autoSlashes.push({ x1: Math.min(...set.map((x) => x.x)) - 50, y1: cy, x2: Math.max(...set.map((x) => x.x)) + 50, y2: cy, life: 0.35 });
-          this.pop(`MEGA COMBO ×${set.length}`, cx, cy - 60, '#ffd23f', 44);
-          if (window.SFX) window.SFX.combo(set.length);
-          continue;
-        }
-        this.slice(o, b.x - a.x, b.y - a.y);
-      }
-    }
-
-    // -------------------------------------------------------------- wave
+    // -------------------------------------------------------------- the wave
     /**
-     * Throws one wave planned for the server outcome and resolves when it is over.
-     * outcome: dragon_fruit | mega_combo | bomb_deflect | frenzy | clean | miss | lethal
+     * Throws a resolved wave: lanes 'F' fruit / 'B' bomb / '-' empty, then the committed blade sweeps
+     * along the cut. steps = multiplier after each fruit cut (count-up), saved = shield absorbs the bomb.
      */
-    playWave({ wave, index, outcome, saved = false, boost = 1.5 }) {
-      this.idle = false;
-      this.objs = this.objs.filter((o) => o.demo && !o.done);
-      const lethal = outcome === 'lethal';
-      let fruits = wave.fruits;
-      let bombs = wave.bombs;
-      if (outcome === 'mega_combo') fruits = Math.max(fruits, 4);
-      if (lethal || outcome === 'bomb_deflect') bombs = Math.max(1, bombs);
-      const w = { outcome, saved, lethal, boost, comboDone: false, lethalDone: false, started: this.t, done: false };
+    playLanes({ lanes, dragon, cut, steps = [], saved = false, outcome, index = 0 }) {
+      this.objs = [];
+      const y = cut.y;
+      const apexT = 1.0; // every object peaks at the line at the same moment
+      const w = { started: this.t, cut, steps, saved, outcome, done: false, cutCount: 0 };
       this.wave = w;
-      const plan = [];
-      const pick = () => COMMON[Math.floor(Math.random() * COMMON.length)];
-      const special = index === 4 ? 'watermelon' : index === 6 ? 'pineapple' : index === 9 ? 'dragon' : null;
-
-      if (outcome === 'mega_combo') {
-        // four fruits peak on one line at the same moment: one swipe takes them all
-        const y = rnd(170, 220);
-        const xs = [300, 410, 520, 630].map((x) => x + rnd(-14, 14));
-        xs.forEach((x, i) => plan.push({ kind: 'fruit', type: pick(), ax: x, ay: y + rnd(-8, 8), at: 0.25, combo: true, auto: 0.22 + i * 0 }));
-        fruits -= 4;
-      }
-      for (let i = 0; i < fruits; i++) {
-        const type = i === 0 && special && special !== 'dragon' ? special : pick();
-        plan.push({ kind: 'fruit', type, ax: rnd(170, 790), ay: rnd(120, 250), at: rnd(0, 0.7) });
-      }
-      if (outcome === 'miss' && plan.length) {
-        // one fruit escapes: thrown fast and low, it cannot be cut
-        const f = plan.find((p) => !p.combo) || plan[0];
-        f.escape = true; f.ay = rnd(250, 300);
-      }
-      if (outcome === 'dragon_fruit' || special === 'dragon') plan.push({ kind: 'fruit', type: 'dragon', ax: rnd(380, 580), ay: rnd(110, 150), at: 0.45, special: outcome === 'dragon_fruit' });
-      if (outcome === 'frenzy') plan.push({ kind: 'fruit', type: 'banana', ax: rnd(380, 580), ay: rnd(120, 160), at: 0.3, banana: true });
-      for (let i = 0; i < bombs; i++) {
-        let role = 'dud';
-        if (i === 0 && lethal) role = 'killer';
-        if (i === 0 && outcome === 'bomb_deflect') role = 'deflect';
-        const centre = role !== 'dud';
-        plan.push({ kind: 'bomb', role, ax: centre ? rnd(420, 540) : rnd(160, 800), ay: centre ? rnd(170, 210) : rnd(140, 260), at: centre ? rnd(0.35, 0.55) : rnd(0.1, 0.8) });
-      }
-      if (lethal && plan.filter((p) => p.kind === 'fruit').length) {
-        // the killer flies through the thick of the fruit
-        const k = plan.find((p) => p.role === 'killer');
-        const fr = plan.filter((p) => p.kind === 'fruit');
-        k.ax = fr.reduce((s, p) => s + p.ax, 0) / fr.length;
-      }
-      for (const p of plan) this.launch(p);
-      if (window.SFX) { window.SFX.throw(); if (bombs) setTimeout(() => window.SFX.fuse(), 300); }
+      const pick = (i) => (i === dragon ? 'dragon' : index === 4 && i % 3 === 0 ? 'watermelon' : index === 6 && i % 3 === 1 ? 'pineapple' : COMMON[(i * 7 + index * 3) % COMMON.length]);
+      [...lanes].forEach((cell, i) => {
+        if (cell === '-') return;
+        const ax = laneX(i) + rnd(-10, 10);
+        const ay = y + rnd(-6, 6);
+        const delay = rnd(0, 0.12);
+        const T = apexT - delay;
+        const vx = rnd(-30, 30);
+        const kind = cell === 'B' ? 'bomb' : 'fruit';
+        const type = kind === 'fruit' ? pick(i) : null;
+        this.objs.push({ kind, type, lane: i, x: ax - vx * T, y: ay + 0.5 * G * T * T, vx, vy: -G * T, r: type ? FRUITS[type].r : 30, rot: rnd(0, TAU), vr: rnd(-2, 2), delay, done: false });
+      });
+      // empty lanes inside the cut puff a little dust when the blade passes
+      if (window.SFX) window.SFX.throw();
+      setTimeout(() => this.startSweep(), (apexT - 0.1) * 1000);
       return new Promise((res) => { w.resolve = res; });
     }
 
-    launch(p) {
-      const y0 = H + 60;
-      const T = Math.sqrt((2 * (y0 - p.ay)) / G);
-      const vx = p.escape ? (Math.random() < 0.5 ? -1 : 1) * rnd(260, 320) : rnd(-110, 110);
-      const look = p.kind === 'fruit' ? FRUITS[p.type] : null;
-      this.objs.push({
-        ...p,
-        x: p.ax - vx * T,
-        y: y0,
-        vx,
-        vy: -G * T,
-        r: look ? look.r : 30,
-        rot: rnd(0, TAU),
-        vr: rnd(-2.4, 2.4),
-        delay: p.at,
-        due: p.at + T + (p.auto != null ? p.auto : 0.35),
-        age: 0,
-        done: false
-      });
+    startSweep() {
+      const w = this.wave;
+      if (!w) return;
+      const x1 = LX0 + LW * w.cut.from + 6;
+      const x2 = LX0 + LW * (w.cut.to + 1) - 6;
+      this.sweep = { x1, x2, y: w.cut.y, t: 0, dur: 0.18 + (w.cut.to - w.cut.from) * 0.05, hit: new Set() };
+      if (window.SFX) window.SFX.swish(1.6);
+    }
+
+    /** The blade reaches lane i. */
+    hitLane(i) {
+      const w = this.wave;
+      const objs = this.objs.filter((o) => o.lane === i && !o.done);
+      if (!objs.length) { this.dust(laneX(i), w.cut.y, 6, 'rgba(255,240,220,0.7)'); return; }
+      for (const o of objs) {
+        if (o.kind === 'bomb') this.detonate(o, w.saved);
+        else {
+          this.slice(o, 1, 0);
+          const m = w.steps[w.cutCount];
+          w.cutCount += 1;
+          if (m) this.pop(`x${m.toFixed(2)}`, o.x, o.y - 56, w.cutCount > 2 ? '#ffd23f' : '#ffffff', 26 + Math.min(4, w.cutCount) * 4);
+          if (o.type === 'dragon') { this.coins(o.x, o.y, 26); this.pop('DRAGON FRUIT!', o.x, o.y - 100, '#ffd23f', 34); if (window.SFX) setTimeout(() => window.SFX.coin(), 80); }
+        }
+      }
     }
 
     slice(o, dx, dy) {
       if (o.done) return;
       o.done = true;
       const look = FRUITS[o.type];
-      const ang = Math.atan2(dy, dx) || rnd(0, TAU);
+      const ang = Math.atan2(dy, dx);
       const nx = -Math.sin(ang);
       const ny = Math.cos(ang);
       for (const s of [-1, 1]) {
-        this.halves.push({ type: o.type, x: o.x + nx * s * 4, y: o.y + ny * s * 4, vx: o.vx * 0.6 + nx * s * 110, vy: Math.min(o.vy, 0) * 0.4 + ny * s * 110 - 60, rot: ang, vr: s * rnd(2, 5), side: s, r: o.r, life: 2.4 });
+        this.halves.push({ type: o.type, x: o.x + nx * s * 4, y: o.y + ny * s * 4, vx: o.vx * 0.6 + nx * s * 90 + rnd(-30, 30), vy: ny * s * 120 - 80, rot: ang, vr: s * rnd(2, 5), side: s, r: o.r, life: 2.4 });
       }
       for (let i = 0; i < 16; i++) {
         const a = rnd(0, TAU);
@@ -253,168 +216,85 @@
       }
       this.splats.push({ x: o.x, y: o.y, r: o.r * rnd(1.1, 1.6), c: look.juice, life: 1, seed: Math.random() * 1000 });
       if (window.SFX) window.SFX.slice();
-      if (o.type === 'dragon' && o.special) {
-        this.coins(o.x, o.y, 26);
-        if (window.SFX) setTimeout(() => window.SFX.coin(), 80);
-        this.pop('DRAGON FRUIT!', o.x, o.y - 70, '#ffd23f', 40);
-      }
-      if (o.banana) this.startFrenzy(o);
     }
 
-    startFrenzy(o) {
-      const w = this.wave;
-      this.slowUntil = this.t + 1.6;
-      if (window.SFX) window.SFX.frenzy();
-      this.pop(`FRENZY ×${(w && w.boost) || 1.5}`, o.x, o.y - 70, '#7ad7ff', 46);
-      for (const b of this.objs) if (b.kind === 'bomb' && !b.done) { b.done = true; this.poof(b.x, b.y); }
-      for (let i = 0; i < 26; i++) {
-        const a = rnd(0, TAU);
-        this.parts.push({ x: o.x, y: o.y, vx: Math.cos(a) * rnd(60, 260), vy: Math.sin(a) * rnd(60, 260) - 120, g: 300, life: rnd(0.8, 1.4), c: ['#5a8dff', '#ff4d6d', '#b05cff'][i % 3], s: rnd(5, 8), berry: true });
-      }
-    }
-
-    deflect(o, dx, dy) {
-      if (o.done) return;
-      o.done = true;
-      o.deflected = true;
-      const len = Math.hypot(dx, dy) || 1;
-      this.halves.push({ bomb: true, x: o.x, y: o.y, vx: (dx / len) * 520 + 120, vy: (dy / len) * 520 - 260, rot: o.rot, vr: 9, r: o.r, life: 2 });
-      for (let i = 0; i < 18; i++) {
-        const a = rnd(0, TAU);
-        this.parts.push({ x: o.x, y: o.y, vx: Math.cos(a) * rnd(120, 420), vy: Math.sin(a) * rnd(120, 420), g: 400, life: rnd(0.2, 0.5), c: i % 2 ? '#ffffff' : '#ffd23f', s: 2.5 });
-      }
-      this.pop('DEFLECT!', o.x, o.y - 60, '#e8f6ff', 40);
-      this.shake = 0.25;
-      if (window.SFX) window.SFX.clang();
-    }
-
-    detonate(o) {
-      const w = this.wave;
-      if (!w || w.lethalDone) return;
-      w.lethalDone = true;
+    detonate(o, saved) {
       o.done = true;
       this.boomAt = { x: o.x, y: o.y, t: this.t };
       if (window.SFX) window.SFX.boom();
-      if (w.saved) {
+      if (saved) {
         this.shieldBurst = { x: o.x, y: o.y, t: this.t };
         this.flash = 0.6;
         this.shake = 0.35;
         if (window.SFX) setTimeout(() => window.SFX.shield(), 120);
-        this.pop('SHIELD!', o.x, o.y - 80, '#7ad7ff', 48);
-      } else {
-        this.flash = 1;
-        this.soot = 1;
-        this.shake = 0.8;
-        for (let i = 0; i < 60; i++) {
-          const a = rnd(0, TAU);
-          const sp = rnd(120, 700);
-          this.parts.push({ x: o.x, y: o.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 200, life: rnd(0.4, 1.2), c: i % 3 ? '#ffb02e' : '#ff4d1a', s: rnd(3, 7) });
-        }
-        for (let i = 0; i < 24; i++) this.parts.push({ x: o.x + rnd(-20, 20), y: o.y + rnd(-20, 20), vx: rnd(-80, 80), vy: rnd(-120, -20), g: -30, life: rnd(1.2, 2.2), c: 'rgba(30,26,24,0.75)', s: rnd(14, 30), smoke: true });
-        // the blast throws the rest of the wave outwards
-        for (const f of this.objs) if (!f.done && f !== o) { const a = Math.atan2(f.y - o.y, f.x - o.x); f.vx += Math.cos(a) * 420; f.vy += Math.sin(a) * 420; f.escape = true; }
-        if (window.SFX) setTimeout(() => window.SFX.lose(), 500);
+        this.pop('SHIELD!', o.x, o.y - 80, '#7ad7ff', 46);
+        return;
       }
+      this.flash = 1;
+      this.soot = 1;
+      this.shake = 0.8;
+      for (let i = 0; i < 60; i++) {
+        const a = rnd(0, TAU);
+        const sp = rnd(120, 700);
+        this.parts.push({ x: o.x, y: o.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 200, life: rnd(0.4, 1.2), c: i % 3 ? '#ffb02e' : '#ff4d1a', s: rnd(3, 7) });
+      }
+      for (let i = 0; i < 24; i++) this.parts.push({ x: o.x + rnd(-20, 20), y: o.y + rnd(-20, 20), vx: rnd(-80, 80), vy: rnd(-120, -20), g: -30, life: rnd(1.2, 2.2), c: 'rgba(30,26,24,0.75)', s: rnd(14, 30), smoke: true });
+      for (const f of this.objs) if (!f.done) { const a = Math.atan2(f.y - o.y, f.x - o.x); f.vx += Math.cos(a) * 380; f.vy += Math.sin(a) * 300; }
+      if (window.SFX) setTimeout(() => window.SFX.lose(), 500);
     }
 
     // -------------------------------------------------------------- effects
-    pop(text, x, y, color, size = 40) { this.texts.push({ text, x: clamp(x, 160, W - 160), y: clamp(y, 140, H - 70), color, size, life: 1.3 }); }
-    banner(text, sub, tone) { this.bannerT = { text, sub, tone, life: 1.6 }; }
-    poof(x, y) { for (let i = 0; i < 14; i++) { const a = rnd(0, TAU); this.parts.push({ x, y, vx: Math.cos(a) * rnd(40, 160), vy: Math.sin(a) * rnd(40, 160), g: -20, life: rnd(0.4, 0.8), c: 'rgba(230,240,255,0.8)', s: rnd(6, 12), smoke: true }); } }
+    pop(text, x, y, color, size = 40) { this.texts.push({ text, x: clamp(x, 120, W - 120), y: clamp(y, 120, H - 70), color, size, life: 1.3 }); }
+    banner(text, sub, tone) { this.bannerT = { text, sub, tone, life: 1.8 }; }
+    dust(x, y, n, c) { for (let i = 0; i < n; i++) this.parts.push({ x, y, vx: rnd(-60, 60), vy: rnd(-60, 20), g: 60, life: rnd(0.3, 0.6), c, s: rnd(2, 4) }); }
     coins(x = W / 2, y = H / 2, n = 30) {
       for (let i = 0; i < n; i++) this.parts.push({ x, y, vx: rnd(-320, 320), vy: rnd(-620, -260), g: 1100, life: rnd(1, 1.6), c: '#ffd23f', s: rnd(5, 8), coin: true, rot: rnd(0, TAU) });
     }
     newPetal(anywhere) { return { x: rnd(-40, W), y: anywhere ? rnd(0, H) : -20, vx: rnd(10, 40), vy: rnd(20, 50), rot: rnd(0, TAU), vr: rnd(-1.5, 1.5), s: rnd(3, 6) }; }
 
     // -------------------------------------------------------------- update
-    update(dtReal) {
-      const slow = this.t < this.slowUntil;
-      this.timeScale = lerp(this.timeScale, slow ? 0.28 : 1, 0.12);
-      const dt = dtReal * this.timeScale;
+    update(dt) {
       this.t += dt;
       const w = this.wave;
-      // trail fades by real time
-      const now = performance.now();
-      this.trail = this.trail.filter((p) => now - p.t < 140);
-
-      // idle demo fruit to slice for fun (no money involved)
-      if (this.idle) {
-        this.nextDemo -= dtReal;
-        if (this.nextDemo <= 0 && this.objs.length < 3) {
-          this.nextDemo = rnd(1.6, 2.6);
-          this.launch({ kind: 'fruit', type: COMMON[Math.floor(Math.random() * COMMON.length)], ax: rnd(220, 740), ay: rnd(140, 260), at: 0, demo: true, auto: 99 });
-        }
+      if (this.sweep) {
+        const sw = this.sweep;
+        sw.t += dt;
+        const k = Math.min(1, sw.t / sw.dur);
+        const x = lerp(sw.x1, sw.x2, k);
+        for (let i = this.wave.cut.from; i <= this.wave.cut.to; i++) if (!sw.hit.has(i) && x >= laneX(i) - LW * 0.25) { sw.hit.add(i); this.hitLane(i); }
+        if (k >= 1 && sw.t > sw.dur + 0.25) this.sweep = null;
       }
-
       for (const o of this.objs) {
         if (o.done) continue;
         if (o.delay > 0) { o.delay -= dt; continue; }
-        o.age += dt;
         o.vy += G * dt;
         o.x += o.vx * dt;
         o.y += o.vy * dt;
         o.rot += o.vr * dt;
-        // harmless bombs and the escaping fruit slide away from the blade
-        if ((o.kind === 'bomb' && o.role === 'dud') || o.escape) {
-          for (const p of this.trail) {
-            const d = Math.hypot(o.x - p.x, o.y - p.y);
-            if (d < 90) { const a = Math.atan2(o.y - p.y, o.x - p.x); o.vx += Math.cos(a) * 900 * dt; o.vy += Math.sin(a) * 900 * dt; }
-          }
-        }
         if (o.kind === 'bomb' && Math.random() < 0.6) this.parts.push({ x: o.x + Math.cos(o.rot - 1) * o.r * 0.9, y: o.y + Math.sin(o.rot - 1) * o.r * 0.9 - 4, vx: rnd(-40, 40), vy: rnd(-80, -20), g: 0, life: 0.25, c: Math.random() < 0.5 ? '#ffd23f' : '#ff7a1a', s: 2.2 });
-        // the result must happen: finish what the outcome needs once the object starts to fall
-        // the player gets the whole flight: fruit (and a bomb to deflect) are only finished for them
-        // on the way out, just before they leave the screen; a lethal bomb goes off after its peak
-        const late = o.vy > 0 && o.y > H - 120;
-        const killer = o.kind === 'bomb' && o.role === 'killer';
-        if (w && !o.demo && o.delay <= 0 && (killer ? o.age + o.at >= o.due : late)) this.autoFinish(o);
         if (o.y > H + 120 && o.vy > 0) o.done = true;
       }
-      // halves and props
+      this.objs = this.objs.filter((o) => !o.done);
       for (const h of this.halves) { h.vy += G * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.rot += h.vr * dt; h.life -= dt; }
       this.halves = this.halves.filter((h) => h.life > 0 && h.y < H + 120);
       for (const p of this.parts) { p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.coin) p.rot += dt * 8; }
       this.parts = this.parts.filter((p) => p.life > 0);
-      for (const s of this.splats) s.life -= dtReal * 0.12;
+      for (const s of this.splats) s.life -= dt * 0.12;
       this.splats = this.splats.filter((s) => s.life > 0).slice(-40);
-      for (const t of this.texts) { t.life -= dtReal; t.y -= dtReal * 30; }
+      for (const t of this.texts) { t.life -= dt; t.y -= dt * 30; }
       this.texts = this.texts.filter((t) => t.life > 0);
-      for (const a of this.autoSlashes) a.life -= dtReal;
-      this.autoSlashes = this.autoSlashes.filter((a) => a.life > 0);
       for (const p of this.petals) {
-        p.x += p.vx * dtReal; p.y += p.vy * dtReal; p.rot += p.vr * dtReal;
+        p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
         if (p.y > H + 20 || p.x > W + 40) Object.assign(p, this.newPetal(false));
       }
-      this.flash = Math.max(0, this.flash - dtReal * 2.4);
-      this.soot = Math.max(0, this.soot - dtReal * 0.45);
-      this.shake = Math.max(0, this.shake - dtReal);
-      if (this.bannerT) { this.bannerT.life -= dtReal; if (this.bannerT.life <= 0) this.bannerT = null; }
-      this.objs = this.objs.filter((o) => !(o.done && (o.demo || o.y > H + 120 || true)));
-
-      // wave over: nothing left in the air
-      if (w && !w.done && this.objs.filter((o) => !o.demo).length === 0 && this.t - w.started > 0.6) {
+      this.flash = Math.max(0, this.flash - dt * 2.4);
+      this.soot = Math.max(0, this.soot - dt * 0.45);
+      this.shake = Math.max(0, this.shake - dt);
+      if (this.bannerT) { this.bannerT.life -= dt; if (this.bannerT.life <= 0) this.bannerT = null; }
+      if (w && !w.done && !this.sweep && this.objs.length === 0 && this.t - w.started > 1.3) {
         w.done = true;
-        const extra = w.lethal ? 900 : 350;
-        setTimeout(() => { this.wave = null; w.resolve(); }, extra);
+        setTimeout(() => { this.wave = null; w.resolve(); }, w.outcome === 'cut' ? 250 : 700);
       }
-    }
-
-    /** Called when an object reaches its due moment: makes the server result true on screen. */
-    autoFinish(o) {
-      const w = this.wave;
-      if (o.finished) return;
-      o.finished = true;
-      if (o.kind === 'bomb') {
-        if (o.role === 'killer') this.detonate(o);
-        else if (o.role === 'deflect') { this.autoSlashes.push({ x1: o.x - 70, y1: o.y + 40, x2: o.x + 70, y2: o.y - 40, life: 0.3 }); this.deflect(o, 1, -0.6); }
-        return;
-      }
-      if (o.escape || w.lethalDone) return;
-      if (w.lethal && !w.lethalDone) { o.finished = false; return; } // the bomb goes first
-      if (o.combo && !w.comboDone) { this.cutAlong({ x: o.x - 60, y: o.y }, { x: o.x + 60, y: o.y }, true); return; }
-      const a = rnd(-0.8, 0.8);
-      this.autoSlashes.push({ x1: o.x - Math.cos(a) * 70, y1: o.y - Math.sin(a) * 70, x2: o.x + Math.cos(a) * 70, y2: o.y + Math.sin(a) * 70, life: 0.3 });
-      this.slice(o, Math.cos(a), Math.sin(a));
     }
 
     // -------------------------------------------------------------- render
@@ -460,20 +340,30 @@
       g.setTransform(this.scale, 0, 0, this.scale, sx * this.scale, sy * this.scale);
 
       // lanterns
-      for (const [lx, hue] of [[110, '#ff5a3c'], [W - 110, '#ff5a3c']]) {
+      for (const lx of [60, W - 60]) {
         const sway = Math.sin(this.t * 1.3 + lx) * 4;
-        g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2; g.beginPath(); g.moveTo(lx, 26); g.lineTo(lx + sway, 58); g.stroke();
-        const glow = g.createRadialGradient(lx + sway, 92, 10, lx + sway, 92, 110);
-        glow.addColorStop(0, 'rgba(255,140,80,0.35)'); glow.addColorStop(1, 'rgba(255,140,80,0)');
-        g.fillStyle = glow; g.fillRect(lx - 120, -20, 240, 240);
-        g.fillStyle = hue; roundRect(g, lx + sway - 26, 58, 52, 68, 22); g.fill();
-        g.fillStyle = 'rgba(255,230,180,0.35)'; roundRect(g, lx + sway - 18, 64, 36, 56, 16); g.fill();
-        g.strokeStyle = 'rgba(80,10,0,0.45)'; g.lineWidth = 1.5;
-        for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(lx + sway - 25, 58 + k * 17); g.lineTo(lx + sway + 25, 58 + k * 17); g.stroke(); }
-        g.fillStyle = '#1a0e07'; g.fillRect(lx + sway - 14, 54, 28, 6); g.fillRect(lx + sway - 14, 124, 28, 6);
+        g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2; g.beginPath(); g.moveTo(lx, 26); g.lineTo(lx + sway, 50); g.stroke();
+        const glow = g.createRadialGradient(lx + sway, 84, 10, lx + sway, 84, 100);
+        glow.addColorStop(0, 'rgba(255,140,80,0.32)'); glow.addColorStop(1, 'rgba(255,140,80,0)');
+        g.fillStyle = glow; g.fillRect(lx - 110, -20, 220, 220);
+        g.fillStyle = '#ff5a3c'; roundRect(g, lx + sway - 22, 50, 44, 60, 20); g.fill();
+        g.fillStyle = 'rgba(255,230,180,0.35)'; roundRect(g, lx + sway - 15, 56, 30, 48, 14); g.fill();
+        g.fillStyle = '#1a0e07'; g.fillRect(lx + sway - 12, 46, 24, 6); g.fillRect(lx + sway - 12, 108, 24, 6);
       }
 
-      // juice splats on the wall
+      // lanes: faint columns, brighter where the cut is
+      const drawing = this.canDraw || this.draft;
+      for (let i = 0; i < LANES; i++) {
+        const inCut = this.cut && i >= this.cut.from && i <= this.cut.to;
+        g.fillStyle = inCut ? 'rgba(255,207,74,0.10)' : drawing ? 'rgba(255,240,220,0.04)' : 'rgba(255,240,220,0.02)';
+        g.fillRect(LX0 + LW * i + 2, 30, LW - 4, H - 30);
+        if (i) { g.fillStyle = 'rgba(255,240,220,0.07)'; g.fillRect(LX0 + LW * i - 1, 30, 2, H - 30); }
+        g.fillStyle = inCut ? 'rgba(255,207,74,0.95)' : 'rgba(255,240,220,0.35)';
+        g.font = '16px Bungee, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(String(i + 1), laneX(i), H - 18);
+      }
+
+      // juice splats
       for (const s of this.splats) {
         g.globalAlpha = Math.min(0.32, s.life * 0.4);
         g.fillStyle = s.c;
@@ -484,13 +374,33 @@
           i ? g.lineTo(s.x + Math.cos(a) * rr, s.y + Math.sin(a) * rr) : g.moveTo(s.x + Math.cos(a) * rr, s.y + Math.sin(a) * rr);
         }
         g.closePath(); g.fill();
-        for (let i = 0; i < 5; i++) { const a = s.seed + i * 1.7; g.beginPath(); g.arc(s.x + Math.cos(a) * s.r * 1.6, s.y + Math.sin(a) * s.r * 1.6, s.r * 0.12, 0, TAU); g.fill(); }
       }
       g.globalAlpha = 1;
 
       // petals
       g.fillStyle = 'rgba(255,170,200,0.55)';
       for (const p of this.petals) { g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.beginPath(); g.ellipse(0, 0, p.s, p.s * 0.55, 0, 0, TAU); g.fill(); g.restore(); }
+
+      // the committed cut (dashed until the blade runs along it)
+      if (this.cut && !this.sweep) {
+        const x1 = LX0 + LW * this.cut.from + 8;
+        const x2 = LX0 + LW * (this.cut.to + 1) - 8;
+        const y = this.cut.y;
+        g.save();
+        g.setLineDash([14, 10]); g.lineDashOffset = -this.t * 40;
+        g.shadowColor = this.blade.glow; g.shadowBlur = 14;
+        g.strokeStyle = this.blade.glow; g.globalAlpha = 0.85; g.lineWidth = 4; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(x1, y); g.lineTo(x2, y); g.stroke();
+        g.setLineDash([]);
+        g.fillStyle = this.blade.core;
+        for (const x of [x1, x2]) { g.beginPath(); g.arc(x, y, 5, 0, TAU); g.fill(); }
+        g.restore();
+      }
+      if (this.draft) {
+        const { a, b } = this.draft;
+        g.save(); g.globalAlpha = 0.6; g.strokeStyle = this.blade.core; g.lineWidth = 3; g.setLineDash([6, 8]);
+        g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); g.restore();
+      }
 
       // objects
       for (const o of this.objs) {
@@ -500,8 +410,7 @@
       }
       for (const h of this.halves) {
         g.globalAlpha = clamp(h.life, 0, 1);
-        if (h.bomb) drawBomb(g, h, this.t);
-        else drawFruit(g, h.type, h.x, h.y, h.rot, h.r, h.side, this.t);
+        drawFruit(g, h.type, h.x, h.y, h.rot, h.r, h.side, this.t);
       }
       g.globalAlpha = 1;
 
@@ -532,40 +441,43 @@
         g.restore();
       }
 
-      // auto slashes and the player's blade
-      for (const a of this.autoSlashes) this.drawSlash(g, [{ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }], a.life / 0.35);
-      if (this.trail.length > 1) this.drawSlash(g, this.trail, 1);
+      // the blade running along the committed cut
+      if (this.sweep) {
+        const sw = this.sweep;
+        const k = Math.min(1, sw.t / sw.dur);
+        const fade = sw.t > sw.dur ? 1 - (sw.t - sw.dur) / 0.25 : 1;
+        const x = lerp(sw.x1, sw.x2, k);
+        const pts = Array.from({ length: 10 }, (_, i) => ({ x: lerp(sw.x1, x, i / 9), y: sw.y + Math.sin(i / 9 * Math.PI) * -6 }));
+        this.drawSlash(g, pts, Math.max(0, fade));
+      }
 
-      // soot + flash
       if (this.soot > 0) { g.fillStyle = `rgba(12,8,6,${this.soot * 0.7})`; g.fillRect(-20, -20, W + 40, H + 40); }
       if (this.flash > 0) { g.fillStyle = `rgba(255,250,235,${this.flash * 0.85})`; g.fillRect(-20, -20, W + 40, H + 40); }
 
-      // floating texts
       for (const t of this.texts) {
         const k = clamp(t.life / 1.3, 0, 1);
-        const sc = 1 + (1 - k) * 0.08 + (k > 0.9 ? (k - 0.9) * 3 : 0);
+        const sc = 1 + (k > 0.9 ? (k - 0.9) * 3 : 0);
         g.save(); g.translate(t.x, t.y); g.scale(sc, sc); g.globalAlpha = clamp(k * 2, 0, 1);
         textOut(g, t.text, 0, 0, t.size, t.color);
         g.restore();
       }
       g.globalAlpha = 1;
 
-      // HUD: multiplier, shield, idle hint
-      if (this.mult) textOut(g, this.mult, W / 2, 62, 46, '#ffd23f');
+      if (this.mult) textOut(g, this.mult, W / 2, 60, 44, '#ffd23f');
       if (this.shieldOn) {
-        g.save(); g.translate(W - 46, 60);
+        g.save(); g.translate(W - 120, 60);
         g.strokeStyle = '#7ad7ff'; g.lineWidth = 3; g.fillStyle = 'rgba(122,215,255,0.18)';
-        g.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + Math.PI / 6; i ? g.lineTo(Math.cos(a) * 22, Math.sin(a) * 22) : g.moveTo(Math.cos(a) * 22, Math.sin(a) * 22); } g.closePath(); g.fill(); g.stroke();
+        g.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + Math.PI / 6; i ? g.lineTo(Math.cos(a) * 20, Math.sin(a) * 20) : g.moveTo(Math.cos(a) * 20, Math.sin(a) * 20); } g.closePath(); g.fill(); g.stroke();
         g.restore();
       }
-      if (this.idle && !this.mult) textOut(g, 'SWIPE TO PRACTISE', W / 2, H - 40, 18, 'rgba(255,240,220,0.55)');
+      if (this.canDraw && !this.cut && !this.draft) textOut(g, 'SWIPE ACROSS THE LANES TO SET YOUR CUT', W / 2, H * 0.72, 22, 'rgba(255,240,220,0.8)');
       if (this.bannerT) {
         const b = this.bannerT;
-        const k = clamp(b.life / 1.6, 0, 1);
+        const k = clamp(b.life / 1.8, 0, 1);
         const sc = k > 0.85 ? 1 + (k - 0.85) * 2 : 1;
-        g.save(); g.translate(W / 2, H * 0.44); g.scale(sc, sc); g.globalAlpha = clamp(k * 3, 0, 1);
-        textOut(g, b.text, 0, 0, 62, b.tone === 'bad' ? '#ff4d4d' : b.tone === 'blue' ? '#7ad7ff' : '#ffd23f');
-        if (b.sub) textOut(g, b.sub, 0, 54, 24, '#fff4e6');
+        g.save(); g.translate(W / 2, H * 0.42); g.scale(sc, sc); g.globalAlpha = clamp(k * 3, 0, 1);
+        textOut(g, b.text, 0, 0, 58, b.tone === 'bad' ? '#ff4d4d' : b.tone === 'blue' ? '#7ad7ff' : '#ffd23f');
+        if (b.sub) textOut(g, b.sub, 0, 52, 22, '#fff4e6');
         g.restore();
       }
       g.globalAlpha = 1;
@@ -596,13 +508,6 @@
   }
 
   // ---------------------------------------------------------------- drawing helpers
-  function segDist(px, py, ax, ay, bx, by) {
-    const dx = bx - ax; const dy = by - ay;
-    const l2 = dx * dx + dy * dy || 1;
-    const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1);
-    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-  }
-
   function roundRect(g, x, y, w, h, r) {
     g.beginPath();
     g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r);
@@ -700,5 +605,5 @@
   }
   function drawFruitStatic(g, type, x, y, r) { drawFruit(g, type, x, y, 0.3, r, 0, 0); }
 
-  window.FruitScene = { Scene, BLADES, FRUITS, drawBladePreview, drawFruitStatic };
+  window.FruitScene = { Scene, BLADES, FRUITS, LANES, drawBladePreview, drawFruitStatic };
 })();

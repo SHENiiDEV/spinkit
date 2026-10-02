@@ -217,3 +217,28 @@ module.exports = {
   mechanic, floor2, round2, newServerSeed, newClientSeed, hashSeed, shotHash,
   windTier, levelsOf, bonusDivisor, clearFactor, savedMultiplier, chanceOf, outcomeOf, outcomeProbs, sideOdds, payoutOf, helmetPrice, quote, ladder
 };
+
+// ------------------------------------------------------------------ engine adapter (used by exclusive-service)
+/** Before a shot: odds and save price for the player's input (step crash has no input). */
+function prepare(game, round, q, body) {
+  return { input: { aim: body.aim }, odds: q.side_bets, helmetPrice: q.helmet_price, chance: q.chance };
+}
+
+/** Resolves a shot from its fair hash. */
+function resolve(game, round, seeds, q) {
+  const cfg = game.crash;
+  const h = shotHash(seeds.server_seed, seeds.client_seed, round.nonce, round.shot_index);
+  const outcome = outcomeOf(cfg, q.chance, h.u);
+  return {
+    outcome,
+    survive: outcome !== 'lethal',
+    saveable: outcome === 'lethal',
+    factor: outcome === 'lethal' ? 0 : clearFactor(cfg, q.chance, outcome),
+    bonus: cfg.bonus && outcome === cfg.bonus.outcome ? cfg.bonus.boost : null,
+    events: [outcome],
+    record: { wind: q.wind, wind_tier: q.wind_tier, chance: q.chance, u: h.u, hash: h.hex }
+  };
+}
+
+module.exports.prepare = prepare;
+module.exports.resolve = resolve;

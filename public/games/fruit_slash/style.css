@@ -93,7 +93,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; word-break:
 .sb-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 1.2px; margin-bottom: 7px; }
 .sb-stake { font-size: 12px; font-weight: 700; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line); padding: 4px 10px; border-radius: 6px; }
 .sb-stake b { color: var(--gold); }
-.sb-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.sb-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .sb { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.32); border: 1px solid var(--line); text-align: left; position: relative; transition: transform 0.08s; }
 .sb::after { content: ''; position: absolute; right: 8px; top: 9px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); }
 .sb .sb-n { font-weight: 900; font-size: 13px; letter-spacing: 0.3px; }
@@ -178,7 +178,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; word-break:
 .hrow { display: flex; gap: 10px; align-items: center; background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 7px 10px; font-size: 13px; flex-wrap: wrap; }
 .hrow .dots { display: flex; gap: 3px; }
 .hrow .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
-.hrow .dot.lethal { background: var(--red); } .hrow .dot.saved { background: var(--blue); } .hrow .dot.dragon_fruit, .hrow .dot.frenzy { background: var(--gold); }
+.hrow .dot.lethal, .hrow .dot.bomb { background: var(--red); } .hrow .dot.empty { background: #8a7a6a; } .hrow .dot.saved { background: var(--blue); } .hrow .dot.dragon_fruit, .hrow .dot.frenzy { background: var(--gold); }
 .hrow .res { margin-left: auto; font-family: var(--display); font-size: 13px; }
 .hrow .res.win { color: var(--green); } .hrow .res.lose { color: var(--red); }
 .hrow button { font-size: 12px; color: var(--blue); text-decoration: underline; }

@@ -223,48 +223,95 @@ console.log('✔ Test 5: start / shoot / cashout / seed flow, wallet and round r
 }
 console.log('✔ Test 6: Revenge boost (bet cap, one use)');
 
-// ------------------------------------------------------------------ 7. Fruit Slash: no wind, Frenzy bonus, one-step shield
+// ------------------------------------------------------------------ 7. Fruit Slash: committed cut over fair lanes
 {
+  const ls = require('../src/engine/exclusive/lane-slash');
   const fs = GAMES_CATALOG.fruit_slash;
   const fc = fs.crash;
-  assert(fs && fs.category === 'exclusive' && fs.rtp === '96.50%');
-  assert.strictEqual(sc.windTier(fc, 9.9).bonus, 0, 'no wind in Fruit Slash');
-  // Frenzy keeps every step EV-neutral: E[factor] x chance = 1
-  for (const c of [0.92, 0.6, 0.3]) {
-    const s = fc.outcomes.frenzy;
-    const ev = c * (s * sc.clearFactor(fc, c, 'frenzy') + (1 - s) * sc.clearFactor(fc, c, 'clean'));
-    assert(Math.abs(ev - 1) < 1e-12, 'frenzy is EV-neutral');
+  assert(fs && fs.category === 'exclusive' && fs.mechanic === 'lane_slash' && fs.rtp === '96.50%');
+  // every offered width is EV-neutral and never lowers the multiplier on a win
+  for (const mode of Object.keys(fc.modes)) {
+    fc.modes[mode].waves.forEach((_, i) => {
+      const w = ls.waveOf(fc, mode, i + 1);
+      for (let k = 1; k <= fc.lanes; k++) {
+        const st = ls.spanStats(fc, w, k);
+        if (st.win <= 0) continue;
+        const ev = st.pf.reduce((sum, p, f) => sum + (p || 0) * (1 + fc.fruit_step * (f - 1)) / st.Z, 0);
+        assert(Math.abs(ev - 1) < 1e-12, 'wave EV-neutral');
+        assert(Math.abs(st.win + st.bomb + st.empty - 1) < 1e-12, 'probabilities sum to 1');
+      }
+    });
   }
-  assert.strictEqual(sc.ladder(fs, 'medium').length, 10);
+  // the hash decides the lanes; the same hash always gives the same wave, with the right counts
+  const hx = sc.shotHash('b'.repeat(64), 'c', 1, 2).hex;
+  const w1 = ls.waveOf(fc, 'medium', 4);
+  const wave = ls.waveFromHash(fc, w1, hx);
+  assert.deepStrictEqual(ls.waveFromHash(fc, w1, hx), wave);
+  assert.strictEqual(wave.lanes.filter((x) => x === 'F').length, w1.n);
+  assert.strictEqual(wave.lanes.filter((x) => x === 'B').length, w1.b);
+  // lanes are uniformly shuffled: each lane holds a bomb about b/L of the time
+  const hits = new Array(fc.lanes).fill(0);
+  for (let i = 0; i < 4000; i++) ls.waveFromHash(fc, w1, sc.shotHash('d'.repeat(64), 'x', i, 0).hex).lanes.forEach((x, j) => { if (x === 'B') hits[j]++; });
+  hits.forEach((h) => assert(Math.abs(h / 4000 - w1.b / fc.lanes) < 0.04, 'bombs spread evenly over lanes'));
+
   const player = dbService.getUser(49104);
   const t = gameService.launch({ merchant: merchants.get(1), player, gameId: 'fruit_slash', baseUrl: 'http://x' }).token;
   const init = gameService.init(t);
-  assert.strictEqual(init.game_config.crash.waves.length, 10);
-  assert.strictEqual(init.game_config.crash.wind, null);
-  // force a state to test the shield: two cleared waves, then buy it and check price + one-use rule
-  let saved = 0; let tries = 0;
-  while (saved < 1 && tries++ < 300) {
-    let r = gameService.action(t, { action: 'start', bet: 200, mode: 'high' });
-    while (r.round) {
-      const q = r.next;
-      if (q.level >= 3) {
-        if (r.round.saves === 0) assert(q.helmet_price > 0, 'shield offered from wave 3');
-        else assert.strictEqual(q.helmet_price, null, 'one shield per round');
-      } else assert.strictEqual(q.helmet_price, null);
-      const before = r.round;
-      r = gameService.action(t, { action: 'shoot', helmet: q.helmet_price != null, expect_shot: q.shot_index });
-      if (r.shot.saved) {
-        saved++;
-        // one step back: the multiplier the round had before its last cleared wave
-        const prev = before.shots.filter((x) => x.multiplier).at(-2);
-        assert.strictEqual(r.round.multiplier, prev.multiplier, 'shield rolls back one step');
-        assert.strictEqual(r.round.level, before.level, 'same wave again');
-      }
-      if (r.round && r.round.level >= 4) r = gameService.action(t, { action: 'cashout' });
+  assert.strictEqual(init.game_config.crash.kind, 'lane_slash');
+  let r = gameService.action(t, { action: 'start', bet: 200, mode: 'medium' });
+  // nothing about the coming wave leaks before the cut is committed
+  const pre = JSON.stringify(r.next);
+  assert(!/lanes"\s*:\s*"|hash|dragon"\s*:/.test(pre), 'the quote does not reveal the wave');
+  assert.throws(() => gameService.action(t, { action: 'shoot' }), (e) => e.code === 'INVALID_CUT');
+  assert.throws(() => gameService.action(t, { action: 'shoot', cut: { from: 3, to: 1 } }), (e) => e.code === 'INVALID_CUT');
+  assert.throws(() => gameService.action(t, { action: 'shoot', cut: { from: 0, to: 7 } }), (e) => e.code === 'INVALID_CUT');
+
+  let saves = 0; let rounds = 0; let guard = 0;
+  while ((rounds < 25 || saves < 1) && guard++ < 2000) {
+    if (!r.round) r = gameService.action(t, { action: 'start', bet: 200, mode: 'high' });
+    const q = r.next;
+    const k = q.level === 1 ? 1 : 2;
+    const from = (q.level * 3) % (fc.lanes - k + 1);
+    const span = q.spans[k - 1];
+    const shield = !!span.helmet_price;
+    const before = r.round;
+    r = gameService.action(t, { action: 'shoot', cut: { from, to: from + k - 1 }, helmet: shield, side_bets: span.side_bets.insurance ? { insurance: 20 } : {}, expect_shot: q.shot_index });
+    const sh = r.shot;
+    // the outcome follows the cut over the recorded lanes
+    const cut = sh.lanes.slice(sh.cut.from, sh.cut.to + 1);
+    const expect = cut.includes('B') ? 'bomb' : cut.includes('F') ? 'cut' : 'empty';
+    assert.strictEqual(sh.outcome, expect);
+    assert.strictEqual(sh.fruits_cut, cut.split('').filter((x) => x === 'F').length);
+    if (sh.side_bets.length) assert.strictEqual(sh.side_bets[0].won, sh.outcome === 'bomb');
+    if (sh.saved) {
+      saves++;
+      assert.strictEqual(sh.outcome, 'bomb', 'the shield only absorbs a bomb');
+      assert.strictEqual(r.round.multiplier, sc.round2(before.shots.filter((x) => x.multiplier).at(-2).multiplier), 'one step back');
+    }
+    if (r.settled) rounds++;
+    else if (r.round.level >= 4) { r = gameService.action(t, { action: 'cashout' }); rounds++; }
+  }
+  assert(saves >= 1, 'a shield save happened');
+  // every recorded wave rebuilds from the revealed seed
+  if (r.round) gameService.action(t, { action: 'cashout' }).round || null;
+  const cur = gameService.init(t);
+  if (cur.round) {
+    let x = { round: cur.round, next: cur.next };
+    while (x.round) x = x.round.level >= 1 ? gameService.action(t, { action: 'cashout' }) : gameService.action(t, { action: 'shoot', cut: { from: 0, to: 0 }, expect_shot: x.next.shot_index });
+  }
+  const rot = gameService.action(t, { action: 'seed' });
+  const rows = dbService.getRecentTransactions(49104, 2000).filter((x) => x.game_id === 'fruit_slash' && x.details.provably_fair.server_seed_hash === rot.revealed.server_seed_hash);
+  assert(rows.length >= 20);
+  for (const row of rows) {
+    const d = row.details;
+    for (const shot of d.shots) {
+      const h = sc.shotHash(rot.revealed.server_seed, d.provably_fair.client_seed, d.provably_fair.nonce, shot.i).hex;
+      assert.strictEqual(h, shot.hash);
+      const again = ls.waveFromHash(fc, ls.waveOf(fc, d.mode, shot.level), h);
+      assert.strictEqual(again.lanes.join(''), shot.lanes);
     }
   }
-  assert(saved >= 1, 'a shield save happened');
 }
-console.log('✔ Test 7: Fruit Slash — no wind, Frenzy bonus EV-neutral, one-step shield once per round');
+console.log('✔ Test 7: Fruit Slash — committed cut, fair lanes, EV-neutral widths, shield, no leak, verifiable');
 
 console.log('All SpinKit Exclusive tests passed.');

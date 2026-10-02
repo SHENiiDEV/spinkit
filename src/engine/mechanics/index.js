@@ -20,7 +20,7 @@
  * so clients never have to check which mechanic produced a response.
  */
 const MECHANICS = Object.fromEntries(
-  ['lines', 'ways', 'tumble', 'giants', 'clusters', 'megaways', 'holdwin', 'matchlines', 'step_crash']
+  ['lines', 'ways', 'tumble', 'giants', 'clusters', 'megaways', 'holdwin', 'matchlines', 'step_crash', 'lane_slash']
     .map((id) => [id, require(`./${id}`)])
 );
 

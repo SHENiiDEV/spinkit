@@ -29,8 +29,9 @@
     <section class="next-strip">
       <div class="ns-item"><span class="ns-l">WAVE</span><span class="ns-v" id="nsLevel">—</span></div>
       <div class="ns-item wide"><span class="ns-l" id="nsWave">—</span><span class="ns-v small" id="nsObjects">—</span></div>
+      <div class="ns-item"><span class="ns-l">YOUR CUT</span><span class="ns-v" id="nsCut">—</span></div>
       <div class="ns-item"><span class="ns-l">CHANCE</span><span class="ns-v" id="nsChance">—</span></div>
-      <div class="ns-item hi"><span class="ns-l">NEXT</span><span class="ns-v" id="nsNext">—</span></div>
+      <div class="ns-item hi"><span class="ns-l">IF CLEARED</span><span class="ns-v" id="nsNext">—</span></div>
     </section>
 
     <section class="sidebets">
@@ -63,8 +64,8 @@
       <div class="sheet">
         <div class="sheet-head"><h2>PROVABLY FAIR</h2><button class="x" data-close>×</button></div>
         <div class="sheet-body">
-          <p class="muted">Every wave is decided before it is thrown: <code>HMAC_SHA256(server_seed, client_seed:nonce:wave)</code>, bytes 0-3 → result.
-            You see the SHA-256 of the server seed now and the seed itself when you rotate.</p>
+          <p class="muted">Every wave is built from <code>HMAC_SHA256(server_seed, client_seed:nonce:wave)</code>: words 0-6 shuffle the lanes, word 7 places the dragon fruit.
+            Your cut is stored before the wave is built. You see the SHA-256 of the server seed now and the seed itself when you rotate.</p>
           <div class="kv"><span>Server seed (SHA-256)</span><code id="pfHash">—</code></div>
           <div class="kv"><span>Client seed</span><div class="inline"><input id="pfClient" maxlength="64" spellcheck="false"><button class="pill-btn" id="pfRotate">ROTATE &amp; REVEAL</button></div></div>
           <div class="kv"><span>Next round nonce</span><code id="pfNonce">—</code></div>

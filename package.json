@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "test": "node test/rgs-engine.test.js && node test/giants.test.js && node test/clusters.test.js && node test/megaways.test.js && node test/holdwin.test.js && node test/matchlines.test.js && node test/ai-skins.test.js && node test/controller.test.js && node test/integration.test.js && node test/merchant-api.test.js && node test/social-casino.test.js && node test/exclusive.test.js",
     "simulate": "node scripts/simulate.js",
-    "simulate:exclusive": "node scripts/simulate-exclusive.js && node scripts/simulate-exclusive.js --game fruit_slash",
+    "simulate:exclusive": "node scripts/simulate-exclusive.js && node scripts/simulate-lanes.js",
     "calibrate": "node scripts/simulate.js --calibrate --write --rounds 400000",
     "new-game": "node scripts/new-game.js",
     "golden": "node scripts/golden-master.js",

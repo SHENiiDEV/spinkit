@@ -24,6 +24,12 @@ const jackpots = require('./jackpots');
 const { currencyInfo } = require('./currency');
 const { ApiError, bad } = require('./errors');
 const sc = require('../engine/exclusive/step-crash');
+const ls = require('../engine/exclusive/lane-slash');
+
+/** Math engine of an exclusive game (same interface: quote / prepare / resolve / levelsOf). */
+const ENGINES = { step_crash: sc, lane_slash: ls };
+const engineOf = (game) => ENGINES[game.mechanic];
+const savedMultiplierOf = (game, round) => (game.mechanic === 'lane_slash' ? round.prev_multiplier : sc.savedMultiplier(game.crash, round));
 
 const db = () => dbService.db;
 
@@ -68,7 +74,7 @@ function roundView(game, round) {
     boost: round.boost,
     nonce: round.nonce,
     level: round.level,
-    levels: sc.levelsOf(game.crash),
+    levels: engineOf(game).levelsOf(game.crash),
     saves: round.saves || 0,
     multiplier: round.level > 0 ? sc.round2(round.multiplier) : null,
     cashout_value: round.level > 0 ? sc.payoutOf(round.bet, round.multiplier, game.max_win_x) : 0,
@@ -107,7 +113,7 @@ function init(token) {
     game_config: { ...gameService.publicGameConfig(game, eff, merchant), kind: 'exclusive' },
     provably_fair: pfView(st),
     round: roundView(game, st.round),
-    next: st.round ? sc.quote(game, st.round, st.pf) : null,
+    next: st.round ? engineOf(game).quote(game, st.round, st.pf) : null,
     stats: st.stats,
     skin: st.skin,
     skins_unlocked: unlockedSkins(game, st),
@@ -140,7 +146,7 @@ function action(token, body = {}) {
       ...out,
       balance,
       round: roundView(ctx.game, st.round),
-      next: st.round ? sc.quote(ctx.game, st.round, st.pf) : null,
+      next: st.round ? engineOf(ctx.game).quote(ctx.game, st.round, st.pf) : null,
       provably_fair: pfView(st),
       stats: st.stats,
       skin: st.skin,
@@ -214,7 +220,15 @@ function shoot({ game, eff, merchant, user, st }, body) {
     throw new ApiError(409, 'STALE_SHOT', 'This shot was already played.', { shot_index: round.shot_index });
   }
   const cfg = game.crash;
-  const q = sc.quote(game, round, { server_seed: st.pf.server_seed, client_seed: round.client_seed });
+  const E = engineOf(game);
+  const seeds = { server_seed: st.pf.server_seed, client_seed: round.client_seed };
+  const q = E.quote(game, round, seeds);
+  let prep;
+  try {
+    prep = E.prepare(game, round, q, body);
+  } catch (e) {
+    throw bad(e.code || 'INVALID_INPUT', e.message);
+  }
 
   // wagers for this shot
   const sideIn = body.side_bets && typeof body.side_bets === 'object' ? body.side_bets : {};
@@ -223,44 +237,40 @@ function shoot({ game, eff, merchant, user, st }, body) {
     const amount = Number(amtIn);
     if (!amount) continue;
     if (!(id in cfg.side_bets)) throw bad('INVALID_SIDE_BET', `Unknown side bet ${id}`);
-    if (!q.side_bets[id]) throw bad('SIDE_BET_UNAVAILABLE', `${cfg.side_bets[id].label} is not offered on this shot`);
+    if (!prep.odds[id]) throw bad('SIDE_BET_UNAVAILABLE', `${cfg.side_bets[id].label} is not offered on this shot`);
     if (!Number.isInteger(amount) || amount < eff.bet_steps[0] || amount > round.bet) {
       throw bad('INVALID_SIDE_BET_AMOUNT', `Side bet must be ${eff.bet_steps[0]}…${round.bet} (minor units)`);
     }
-    sides.push({ id, stake: amount, odds: q.side_bets[id] });
+    sides.push({ id, stake: amount, odds: prep.odds[id] });
   }
   const helmet = !!body.helmet;
-  if (helmet && q.helmet_price == null) throw bad('HELMET_UNAVAILABLE', cfg.helmet && cfg.helmet.max_saves && round.saves >= cfg.helmet.max_saves ? 'The save was already used in this round' : `Available from level ${cfg.helmet ? cfg.helmet.from_level : '-'}`);
-  const cost = sides.reduce((s, x) => s + x.stake, 0) + (helmet ? q.helmet_price : 0);
+  if (helmet && prep.helmetPrice == null) throw bad('HELMET_UNAVAILABLE', cfg.helmet && cfg.helmet.max_saves && round.saves >= cfg.helmet.max_saves ? 'The save was already used in this round' : `Available from level ${cfg.helmet ? cfg.helmet.from_level : '-'}`);
+  const cost = sides.reduce((s, x) => s + x.stake, 0) + (helmet ? prep.helmetPrice : 0);
   if (user.balance < cost) throw bad('INSUFFICIENT_FUNDS', 'Недостаточно средств.', { balance: user.balance, required: cost });
 
-  // the fair shot
-  const h = sc.shotHash(st.pf.server_seed, round.client_seed, round.nonce, round.shot_index);
-  const outcome = sc.outcomeOf(cfg, q.chance, h.u);
+  // the fair shot (the player's input is already fixed in `prep`)
+  const res = E.resolve(game, round, seeds, q, prep.input);
   let sideWin = 0;
   for (const s of sides) {
-    s.won = cfg.side_bets[s.id].wins_on.includes(outcome);
+    const winsOn = cfg.side_bets[s.id].wins_on || [s.id];
+    s.won = res.events.some((ev) => winsOn.includes(ev));
     s.win = s.won ? Math.min(Math.floor(s.stake * s.odds), s.stake * game.max_win_x) : 0;
     sideWin += s.win;
   }
   setBalance(user.id, user.balance - cost + sideWin);
   round.side_staked += sides.reduce((s, x) => s + x.stake, 0);
   round.side_won += sideWin;
-  if (helmet) round.helmets += q.helmet_price;
+  if (helmet) round.helmets += prep.helmetPrice;
 
-  const lethal = outcome === 'lethal';
-  const saved = lethal && helmet;
+  const lethal = !res.survive;
+  const saved = lethal && helmet && res.saveable;
   const shot = {
     i: round.shot_index,
     level: q.level,
-    wind: q.wind,
-    wind_tier: q.wind_tier,
-    chance: q.chance,
-    u: h.u,
-    hash: h.hex,
-    outcome,
+    ...res.record,
+    outcome: res.outcome,
     saved,
-    helmet: helmet ? q.helmet_price : 0,
+    helmet: helmet ? prep.helmetPrice : 0,
     side_bets: sides,
     aim: sanitizeAim(body.aim)
   };
@@ -269,7 +279,7 @@ function shoot({ game, eff, merchant, user, st }, body) {
 
   let settled = null;
   if (saved) {
-    round.multiplier = sc.savedMultiplier(cfg, round);
+    round.multiplier = savedMultiplierOf(game, round);
     round.saves = (round.saves || 0) + 1;
   } else if (lethal) {
     if (cfg.revenge && q.level >= cfg.revenge.min_level) {
@@ -279,13 +289,14 @@ function shoot({ game, eff, merchant, user, st }, body) {
   } else {
     round.level = q.level;
     round.prev_multiplier = round.multiplier;
-    round.multiplier *= sc.clearFactor(cfg, q.chance, outcome);
-    if (cfg.bonus && outcome === cfg.bonus.outcome) shot.bonus = cfg.bonus.boost;
+    round.multiplier *= res.factor;
+    if (res.bonus) shot.bonus = res.bonus;
     st.stats.shots += 1;
     shot.multiplier = sc.round2(round.multiplier);
     const pay = sc.payoutOf(round.bet, round.multiplier, game.max_win_x);
-    if (round.level >= sc.levelsOf(cfg)) settled = settle({ game, merchant, user, st }, 'top', pay);
+    if (round.level >= E.levelsOf(cfg)) settled = settle({ game, merchant, user, st }, 'top', pay);
     else if (pay >= round.bet * game.max_win_x) settled = settle({ game, merchant, user, st }, 'max_win', pay);
+    else if (E === ls && !E.quote(game, round, seeds).spans.some((x) => x.playable)) settled = settle({ game, merchant, user, st }, 'max_win', pay);
   }
   return { shot: { ...shot, side_win: sideWin, cost }, settled };
 }

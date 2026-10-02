@@ -1,18 +1,18 @@
 /*
- * Fruit Slash — game client (SpinKit Exclusive, step crash).
- * POST /api/v1/rgs/init and /api/v1/rgs/action; the canvas scene animates what the server decided.
+ * Fruit Slash — game client (SpinKit Exclusive, lane slash).
+ * The player sets the cut first; THROW sends it to the server, which only then builds the wave from the
+ * fair hash and resolves it. POST /api/v1/rgs/init and /api/v1/rgs/action.
  */
 (function () {
   const $ = (id) => document.getElementById(id);
   const TOKEN = new URLSearchParams(location.search).get('token');
   const SFX = window.SFX;
-  const SIDE_ORDER = ['mega_combo', 'bomb_deflect', 'dragon_fruit', 'clean_sheet', 'insurance'];
+  const SIDE_ORDER = ['mega_combo', 'clean_sheet', 'dragon_fruit', 'insurance'];
   const SIDE_HINT = {
-    mega_combo: '4 or more fruits cut in one swipe',
-    bomb_deflect: 'The blade knocks a bomb away without a blast',
-    dragon_fruit: 'A golden dragon fruit appears and is cut',
-    clean_sheet: 'Every fruit of the wave is cut',
-    insurance: 'Pays if the wave ends in a bomb blast'
+    mega_combo: '3 or more fruits in your cut, no bomb',
+    clean_sheet: 'Every fruit of the wave in your cut, no bomb',
+    dragon_fruit: 'The golden dragon fruit lands in your cut, no bomb',
+    insurance: 'A bomb lands in your cut'
   };
 
   class Money {
@@ -58,7 +58,7 @@
       if (!TOKEN) return this.fatal('No session token. Launch the game from the lobby.');
       let d;
       try { d = await api('init', {}); } catch (e) { return this.fatal(e.message); }
-      if (!d.game_config || !d.game_config.crash || !d.game_config.crash.waves) return this.fatal('This server does not run Fruit Slash yet — restart it.');
+      if (!d.game_config || !d.game_config.crash || d.game_config.crash.kind !== 'lane_slash') return this.fatal('This server does not run Fruit Slash yet — restart it.');
       this.loader(60, 'PICKING FRUIT…');
       this.cfg = d.game_config;
       this.crash = this.cfg.crash;
@@ -69,12 +69,12 @@
       this.mode = this.crash.default_mode;
       this.sideStake = this.steps[0];
       this.scene = new window.FruitScene.Scene($('scene'));
+      this.scene.onCut = (c) => { this.cut = c; if (c) SFX.click(); this.render(); };
       this.apply(d);
       if (d.round) {
         this.mode = d.round.mode;
         this.betIndex = Math.max(0, this.steps.indexOf(d.round.bet));
         for (const s of d.round.shots) if (s.multiplier) this.reached[s.level] = s.multiplier;
-        this.scene.setIdle(false);
         this.toast('Unfinished round restored');
       }
       this.bindUi();
@@ -183,37 +183,49 @@
         this.reached = {};
         this.deadAt = null;
         this.shieldSel = false;
-        this.scene.setIdle(false);
-        this.scene.banner('WAVE 1', this.crash.waves[0].name.toUpperCase(), 'good');
+        this.scene.clearWave();
+        this.scene.banner('WAVE 1', 'SWIPE ACROSS THE LANES, THEN THROW', 'good');
         (d.jackpot_wins || []).forEach((j) => this.toast(`JACKPOT ${j.name}: ${this.money.fmt(j.amount)}!`));
       } catch (e) { this.error(e); }
       this.busy = false;
       this.render();
     }
 
+    /** Odds of the current cut width on the coming wave (null until a cut is set). */
+    get span() {
+      if (!this.round || !this.next || !this.cut) return null;
+      const s = this.next.spans[this.cut.to - this.cut.from];
+      return s && s.playable ? s : null;
+    }
+
     sideBetsForWave() {
       const out = {};
-      if (!this.next) return out;
-      for (const id of SIDE_ORDER) if (this.sideSel[id] && this.next.side_bets[id]) out[id] = this.sideStake;
+      const sp = this.span;
+      if (!sp) return out;
+      for (const id of SIDE_ORDER) if (this.sideSel[id] && sp.side_bets[id]) out[id] = this.sideStake;
       return out;
     }
 
     waveCost() {
+      const sp = this.span;
       const sides = Object.values(this.sideBetsForWave()).reduce((a, b) => a + b, 0);
-      return sides + (this.shieldSel && this.next && this.next.helmet_price ? this.next.helmet_price : 0);
+      return sides + (this.shieldSel && sp && sp.helmet_price ? sp.helmet_price : 0);
     }
 
     async throwWave() {
+      const sp = this.span;
       if (this.busy || !this.round || !this.next) return;
+      if (!sp) return this.toast('Swipe across the lanes to set your cut first', true);
       const cost = this.waveCost();
       if (cost > this.balance) return this.toast('Not enough credit for the side bets', true);
       this.busy = true;
       this.render();
       const q = this.next;
-      const shield = !!(this.shieldSel && q.helmet_price);
+      const cut = { ...this.cut };
+      const shield = !!(this.shieldSel && sp.helmet_price);
       let d;
       try {
-        d = await api('action', { action: 'shoot', side_bets: this.sideBetsForWave(), helmet: shield, expect_shot: q.shot_index });
+        d = await api('action', { action: 'shoot', cut: { from: cut.from, to: cut.to }, side_bets: this.sideBetsForWave(), helmet: shield, expect_shot: q.shot_index });
       } catch (e) {
         this.busy = false;
         this.error(e);
@@ -223,22 +235,21 @@
       this.balance -= d.shot.cost;
       this.render();
       const shot = d.shot;
-      const idx = q.level - 1;
-      await this.scene.playWave({ wave: this.crash.waves[idx], index: idx, outcome: shot.outcome, saved: shot.saved, boost: (this.crash.bonus && this.crash.bonus.boost) || 1.5 });
+      const steps = shot.outcome === 'cut' ? sp.multipliers.slice(0, shot.fruits_cut) : [];
+      await this.scene.playLanes({ lanes: shot.lanes, dragon: shot.dragon, cut, steps, saved: shot.saved, outcome: shot.outcome, index: q.level - 1 });
       this.apply(d);
       if (shot.side_win > 0) {
-        this.flashSide(shot.side_bets.filter((s) => s.won).map((s) => s.id));
+        this.flashSide(shot.side_bets.filter((x) => x.won).map((x) => x.id));
         this.toast(`SIDE BET WIN ${this.money.fmt(shot.side_win)}`);
         SFX.coin();
       }
       if (shot.saved) {
-        this.scene.banner('SHIELD!', `ONE STEP BACK · x${this.round.multiplier.toFixed(2)}`, 'blue');
+        this.scene.banner('SHIELD!', `ONE STEP BACK · x${this.round.multiplier.toFixed(2)} · SAME WAVE AGAIN`, 'blue');
         this.shieldSel = false;
-      } else if (shot.outcome === 'lethal') {
+      } else if (shot.outcome !== 'cut') {
         this.deadAt = shot.level;
-        this.scene.banner('BOOM!', 'ROUND LOST', 'bad');
+        this.scene.banner(shot.outcome === 'bomb' ? 'BOOM!' : 'MISSED!', shot.outcome === 'bomb' ? 'A BOMB WAS IN YOUR CUT' : 'NO FRUIT IN YOUR CUT', 'bad');
         this.history.unshift(this.historyRow(d));
-        this.scene.setIdle(true);
       } else {
         this.reached[shot.level] = shot.multiplier;
         if (d.settled) {
@@ -246,12 +257,11 @@
           SFX.cashout();
           this.scene.coins(480, 300, 60);
           this.history.unshift(this.historyRow(d));
-          this.scene.setIdle(true);
         } else {
-          const bonus = shot.bonus ? `FRENZY ×${shot.bonus} · ` : shot.outcome === 'miss' ? 'ONE GOT AWAY · ' : '';
-          this.scene.banner(`WAVE ${shot.level} CLEARED`, `${bonus}NEXT: ${this.crash.waves[q.level].name.toUpperCase()}`, shot.bonus ? 'blue' : 'good');
+          this.scene.banner(`WAVE ${shot.level} CLEARED`, `${shot.fruits_cut} FRUIT${shot.fruits_cut > 1 ? 'S' : ''} · x${shot.multiplier.toFixed(2)} · NEXT: ${this.crash.wave_names[q.level].toUpperCase()}`, 'good');
         }
       }
+      if (!this.round) this.scene.setCut(null);
       this.busy = false;
       this.render();
     }
@@ -268,7 +278,7 @@
         SFX.cashout();
         this.scene.coins(480, 300, 40);
         this.scene.banner('CASHED OUT', `${this.money.fmt(s.win)} · x${s.multiplier.toFixed(2)}`, 'good');
-        this.scene.setIdle(true);
+        this.scene.setCut(null);
       } catch (e) { this.error(e); }
       this.busy = false;
       this.render();
@@ -293,7 +303,7 @@
 
     historyRow(d) {
       const s = d.settled;
-      return { settled: s, nonce: s.nonce, client_seed: s.client_seed, server_seed_hash: s.server_seed_hash, shots: s.shots };
+      return { settled: s, mode: s.mode, nonce: s.nonce, client_seed: s.client_seed, server_seed_hash: s.server_seed_hash, shots: s.shots };
     }
 
     // -------------------------------------------------------------- rendering
@@ -321,11 +331,11 @@
 
       const main = $('btnMain');
       main.classList.toggle('go', !!r);
-      main.disabled = this.busy || (!r && this.bet > this.balance);
+      main.disabled = this.busy || (!r && this.bet > this.balance) || (!!r && !this.span);
       if (r) {
-        $('btnMainTop').textContent = 'THROW WAVE';
+        $('btnMainTop').textContent = 'THROW';
         const cost = this.waveCost();
-        $('btnMainSub').textContent = cost ? `WAGERS ${fmt(cost)}` : 'THEN SWIPE TO SLICE';
+        $('btnMainSub').textContent = !this.span ? 'SET YOUR CUT FIRST' : cost ? `WAGERS ${fmt(cost)}` : 'LOCKS YOUR CUT';
       } else {
         $('btnMainTop').textContent = 'START';
         $('btnMainSub').textContent = `BET ${fmt(this.bet)}`;
@@ -335,21 +345,25 @@
       cash.disabled = !canCash;
       cash.classList.toggle('ready', canCash);
       $('cashVal').textContent = r && r.level >= 1 ? fmt(r.cashout_value) : '—';
+      const sp = this.span;
       this.scene.setMultiplier(r && r.level >= 1 ? `x${r.multiplier.toFixed(2)}` : '');
-      this.scene.setShield(!!(r && this.shieldSel && q && q.helmet_price));
+      this.scene.setShield(!!(sp && this.shieldSel && sp.helmet_price));
+      this.scene.setDrawing(!!r && !this.busy, q ? q.max_width : this.crash.lanes);
+      if (r && !this.busy && !sp && this.cut) this.scene.setCut(null);
 
       const lvl = r && q ? q.level : 1;
-      const wave = this.crash.waves[lvl - 1];
+      const [n, b] = this.crash.modes[this.mode].waves[lvl - 1];
       $('nsLevel').textContent = `${r ? lvl : 0}/${this.crash.levels}`;
-      $('nsWave').textContent = wave.name.toUpperCase();
-      $('nsObjects').innerHTML = `<span class="fr">${wave.fruits}</span> FRUIT · <span class="bm">${wave.bombs}</span> BOMB${wave.bombs === 1 ? '' : 'S'}`;
-      if (r && q) {
-        $('nsChance').textContent = `${(q.chance * 100).toFixed(1)}%`;
-        $('nsNext').textContent = `x${q.multiplier.toFixed(2)} · ${fmt(q.payout)}`;
+      $('nsWave').textContent = this.crash.wave_names[lvl - 1].toUpperCase();
+      $('nsObjects').innerHTML = `<span class="fr">${n}</span> FRUIT · <span class="bm">${b}</span> BOMB${b === 1 ? '' : 'S'} · ${this.crash.lanes - n - b} EMPTY`;
+      $('nsCut').textContent = sp ? `${this.cut.to - this.cut.from + 1} LANE${this.cut.to > this.cut.from ? 'S' : ''}` : r ? 'SWIPE' : '—';
+      if (sp) {
+        $('nsChance').textContent = `${(sp.chance * 100).toFixed(1)}%`;
+        const m = sp.multipliers;
+        $('nsNext').textContent = m.length > 1 ? `x${m[0].toFixed(2)} – x${m.at(-1).toFixed(2)}` : `x${m[0].toFixed(2)}`;
       } else {
-        const lad = this.crash.modes[this.mode].ladder;
-        $('nsChance').textContent = `${(this.crash.modes[this.mode].survival[0] * 100).toFixed(0)}%`;
-        $('nsNext').textContent = `UP TO x${fmtMult(lad.at(-1))}`;
+        $('nsChance').textContent = '—';
+        $('nsNext').textContent = r ? 'SET YOUR CUT' : `${this.crash.levels} WAVES`;
       }
       this.renderSideBets();
       this.renderLadder();
@@ -357,7 +371,7 @@
 
     renderSideBets() {
       const row = $('sbRow');
-      const q = this.round ? this.next : null;
+      const q = this.round ? this.span : null;
       if (!row.children.length) {
         for (const id of SIDE_ORDER) {
           const b = document.createElement('button');
@@ -371,7 +385,7 @@
         const h = document.createElement('button');
         h.className = 'sb shield';
         h.dataset.id = 'shield';
-        h.title = 'Samurai Shield: absorbs one bomb per round; the multiplier goes one step back and you throw the same wave again';
+        h.title = 'Samurai Shield: absorbs a bomb in your cut once per round; the multiplier goes one step back and you play the same wave again';
         h.innerHTML = `<span class="sb-n">${this.crash.helmet.label || 'Shield'}</span><span class="sb-o">—</span>`;
         h.onclick = () => { this.shieldSel = !this.shieldSel; SFX.click(); this.render(); };
         row.appendChild(h);
@@ -384,13 +398,13 @@
           const price = q && q.helmet_price;
           b.disabled = this.busy || !price;
           b.classList.toggle('on', !!(this.shieldSel && price));
-          o.textContent = price ? this.money.fmt(price) : q && this.round.saves ? 'USED' : q ? `FROM WAVE ${this.crash.helmet.from_level}` : '1 PER ROUND';
+          o.textContent = price ? this.money.fmt(price) : this.round && this.round.saves ? 'USED' : this.round ? (q ? `FROM WAVE ${this.crash.helmet.from_level}` : 'SET CUT') : '1 PER ROUND';
           continue;
         }
         const odds = q ? q.side_bets[id] : null;
-        b.disabled = this.busy || (q && !odds);
+        b.disabled = this.busy || (!!q && !odds);
         b.classList.toggle('on', !!this.sideSel[id] && (!q || !!odds));
-        o.textContent = odds ? `x${odds.toFixed(2)}` : q ? '—' : 'ODDS ON START';
+        o.textContent = odds ? `x${odds.toFixed(2)}` : q ? '—' : this.round ? 'SET CUT' : 'ODDS ON START';
       }
     }
 
@@ -407,24 +421,18 @@
         }
       }
       const r = this.round;
-      const surv = this.crash.modes[this.mode].survival;
-      const D = this.crash.bonus ? 1 + this.crash.outcomes[this.crash.bonus.outcome] * (this.crash.bonus.boost - 1) : 1;
-      let est = r && this.next ? this.next.multiplier : null;
+      const sp = this.span;
+      const waves = this.crash.modes[this.mode].waves;
       [...el.children].forEach((d, i) => {
         const L = i + 1;
         const rm = d.querySelector('.rm');
+        const comp = `${waves[i][0]}F·${waves[i][1]}B`;
         d.className = 'rung';
-        if (r) {
-          if (L <= r.level) { d.classList.add('done'); rm.textContent = `x${fmtMult(this.reached[L] || 0)}`; } else if (L === r.level + 1) { d.classList.add('next'); rm.textContent = `x${fmtMult(this.next.multiplier)}`; } else {
-            est = est / (surv[L - 1] * D);
-            d.classList.add('est');
-            rm.textContent = `x${fmtMult(est)}`;
-          }
-        } else {
-          rm.textContent = `x${fmtMult(this.crash.modes[this.mode].ladder[i])}`;
-          if (this.deadAt && L === this.deadAt) d.classList.add('dead');
-          else if (this.deadAt && L < this.deadAt && this.reached[L]) { d.classList.add('done'); rm.textContent = `x${fmtMult(this.reached[L])}`; }
-        }
+        if (r && L <= r.level) { d.classList.add('done'); rm.textContent = `x${fmtMult(this.reached[L] || 0)}`; return; }
+        if (r && L === r.level + 1) { d.classList.add('next'); rm.textContent = sp ? `x${fmtMult(sp.multipliers.at(-1))}` : comp; return; }
+        if (!r && this.deadAt && L === this.deadAt) { d.classList.add('dead'); rm.textContent = comp; return; }
+        if (!r && this.deadAt && L < this.deadAt && this.reached[L]) { d.classList.add('done'); rm.textContent = `x${fmtMult(this.reached[L])}`; return; }
+        rm.textContent = comp;
       });
     }
 
@@ -447,27 +455,28 @@
     openRules() {
       const c = this.crash;
       const pct = (v) => `${(v * 100).toFixed(2)}%`;
-      const ladders = Object.entries(c.modes).map(([id, m]) => `<tr><td>${m.label}</td>${m.ladder.map((x, i) => `<td class="n" title="${Math.round(m.survival[i] * 100)}% chance">x${fmtMult(x)}</td>`).join('')}</tr>`).join('');
-      const chances = Object.entries(c.modes).map(([id, m]) => `<tr><td>${m.label}</td>${m.survival.map((p) => `<td>${Math.round(p * 100)}%</td>`).join('')}</tr>`).join('');
+      const waves = Object.entries(c.modes).map(([id, m]) => `<tr><td>${m.label}</td>${m.waves.map(([f, b]) => `<td>${f}F ${b}B</td>`).join('')}</tr>`).join('');
       const sides = SIDE_ORDER.map((id) => `<tr><td>${c.side_bets[id].label}</td><td>${SIDE_HINT[id]}</td><td class="n">${pct(c.side_bets[id].rtp)}</td></tr>`).join('');
       $('rulesBody').innerHTML = `
-        <p>Fruit Slash is a <b>step crash</b> game. Place a bet and throw up to ${c.levels} waves of fruit. Slice through them with your blade:
-          every cleared wave raises the multiplier. <b>Cash out</b> after any cleared wave, or throw the next one. A bomb blast ends the round
-          and the bet is lost. Clearing wave ${c.levels} cashes out automatically.</p>
-        <h3>LADDER</h3>
-        <div class="tbl-wrap"><table class="tbl"><tr><th>Wave</th>${c.waves.map((w, i) => `<th>${i + 1}</th>`).join('')}</tr>${chances}${ladders}</table></div>
-        <p class="muted">Upper rows: chance to clear the wave. Lower rows: multiplier after it. Before each wave you see its exact chance and the multiplier you will reach.</p>
-        <h3>FRENZY BANANA</h3>
-        <p>A blue banana can appear in a cleared wave (${pct(c.outcomes.frenzy)} of them). Slice it: time slows, bombs vanish and that wave pays ×${c.bonus.boost} on top of its step. The ladder already accounts for it, so the return stays the same.</p>
+        <p>Fruit Slash is a <b>step crash</b> game played over ${c.lanes} lanes. Place a bet, then before every wave <b>swipe across the lanes to set your cut</b>.
+          Press THROW: your cut is locked in and only then the wave is thrown — fruit, bombs and empty lanes.</p>
+        <ul>
+          <li>Every fruit in your cut is sliced and raises the multiplier; more fruit in one cut pays more.</li>
+          <li>A bomb in your cut ends the round. A cut with no fruit in it also ends the round.</li>
+          <li><b>Cash out</b> after any cleared wave. Clearing wave ${c.levels} cashes out automatically.</li>
+          <li>A wider cut catches more fruit and more risk. The chance and the multipliers for your width are shown before you throw.</li>
+        </ul>
+        <h3>WAVES</h3>
+        <div class="tbl-wrap"><table class="tbl"><tr><th>Risk</th>${c.wave_names.map((w, i) => `<th>${i + 1}</th>`).join('')}</tr>${waves}</table></div>
+        <p class="muted">F = fruit, B = bombs, the rest of the ${c.lanes} lanes are empty. Which lane holds what is decided by the fair hash after your cut is locked.</p>
         <h3>SIDE BETS (NEXT WAVE ONLY)</h3>
-        <p>Pick side bets and a stake (up to your bet) before a wave. They settle on that wave at the odds shown, whatever happens to the main bet.</p>
+        <p>Pick side bets and a stake (up to your bet) before a wave. Their odds depend on the width of your cut and settle on that wave.</p>
         <table class="tbl"><tr><th>Bet</th><th>Wins when</th><th>RTP</th></tr>${sides}</table>
         <h3>SAMURAI SHIELD</h3>
-        <p>From wave ${c.helmet.from_level} you can buy a shield for the next wave, once per round. If that wave ends in a blast, the shield absorbs it: the multiplier goes back one step and you throw the same wave again. Price = chance of a blast × the multiplier it keeps (RTP ${pct(c.helmet.rtp)}).</p>
+        <p>From wave ${c.helmet.from_level}, once per round, buy a shield for the next wave. If a bomb is in your cut, the shield absorbs it: the multiplier goes back one step and you play the same wave again. It does not cover a cut with no fruit. Price = chance of a bomb in your cut × the multiplier it keeps (RTP ${pct(c.helmet.rtp)}).</p>
         <h3>RTP &amp; FAIRNESS</h3>
-        <p>Theoretical RTP of the main bet: <b>${pct(c.rtp)}</b> for any cash-out strategy (multipliers rounded to 0.01). Maximum win ${this.cfg.max_win_x.toLocaleString()}× bet.
-          Every wave is decided by HMAC-SHA256 of the server seed (its hash is shown before you play), your client seed, the round nonce and the wave number — see <b>FAIR</b>.</p>
-        <p><b>Swiping is cosmetic.</b> The result of each wave is fixed by the fair hash before it is thrown; the blade only plays it out. If you do not swipe, the wave is cut for you.</p>
+        <p>Theoretical RTP of the main bet: <b>${pct(c.rtp)}</b> for any cut widths and any cash-out point (every wave is priced so its average return is exactly the stake; multipliers are rounded to 0.01). Maximum win ${this.cfg.max_win_x.toLocaleString()}× bet: a width is only offered while its best result stays within it.</p>
+        <p>The lanes of every wave come from HMAC-SHA256 of the server seed (its hash is shown before you play), your client seed, the round nonce and the wave number. Your cut is stored before that wave is built, so neither side can change the result. Rotate the seed in <b>FAIR</b> to check every wave you played.</p>
         <p class="muted">Malfunction voids all pays and plays. An unfinished round is kept and restored the next time you open the game.</p>`;
       $('modalRules').hidden = false;
     }
@@ -526,8 +535,11 @@
       lines.push(`sha256(server_seed) = ${sh}  ${sh === h.server_seed_hash ? '✓ matches' : '✗ MISMATCH'}`);
       for (const s of h.shots) {
         const v = await fairShot(seed, h.client_seed, h.nonce, s.i);
-        const outcome = outcomeOf(this.crash, s.chance, v.u);
-        lines.push(`wave ${s.level} (#${s.i}): u=${v.u.toFixed(6)} vs chance ${s.chance.toFixed(6)} → ${outcome} ${outcome === s.outcome && v.hex === s.hash ? '✓' : '✗'}`);
+        const [n, b] = this.crash.modes[h.mode].waves[s.level - 1];
+        const wave = waveFromHash(this.crash, n, b, v.bytes);
+        const cut = wave.lanes.slice(s.cut.from, s.cut.to + 1);
+        const outcome = cut.includes('B') ? 'bomb' : cut.includes('F') ? 'cut' : 'empty';
+        lines.push(`wave ${s.level} (#${s.i}): lanes ${wave.lanes.join('')} · cut ${s.cut.from + 1}-${s.cut.to + 1} → ${outcome} ${wave.lanes.join('') === s.lanes && outcome === s.outcome && v.hex === s.hash ? '✓' : '✗'}`);
       }
       $('vServer').value = seed; $('vClient').value = h.client_seed; $('vNonce').value = h.nonce; $('vShot').value = 0;
       $('vOut').textContent = lines.join('\n');
@@ -537,8 +549,11 @@
       const server = $('vServer').value.trim();
       if (!server) { $('vOut').textContent = 'Enter a revealed server seed.'; return; }
       const v = await fairShot(server, $('vClient').value.trim(), Number($('vNonce').value), Number($('vShot').value));
-      $('vOut').textContent = `sha256(server_seed) = ${await sha256(server)}\nhmac = ${v.hex}\nu (bytes 0-3) = ${v.u.toFixed(8)}\n` +
-        Object.entries(this.crash.modes).map(([id, m]) => `${m.label}: ${m.survival.map((p, i) => `W${i + 1} ${outcomeOf(this.crash, p, v.u)}`).join(' · ')}`).join('\n');
+      const lines = [`sha256(server_seed) = ${await sha256(server)}`, `hmac = ${v.hex}`];
+      for (const [id, m] of Object.entries(this.crash.modes)) {
+        lines.push(`${m.label}, by wave: ` + m.waves.map(([n, b], i) => `W${i + 1} ${waveFromHash(this.crash, n, b, v.bytes).lanes.join('')}`).join(' · '));
+      }
+      $('vOut').textContent = lines.join('\n') + '\n(F fruit, B bomb, - empty; lane 1 first)';
     }
 
     openSkins() {
@@ -570,15 +585,17 @@
   async function fairShot(server, client, nonce, shot) {
     const key = await crypto.subtle.importKey('raw', enc.encode(server), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${client}:${nonce}:${shot}`));
-    return { hex: hex(sig), u: new DataView(sig).getUint32(0) / 4294967296 };
+    return { hex: hex(sig), bytes: new DataView(sig) };
   }
-  function outcomeOf(c, chance, u) {
-    if (u >= chance) return 'lethal';
-    const x = u / chance;
-    let acc = 0;
-    const entries = Object.entries(c.outcomes);
-    for (const [id, share] of entries) { acc += share; if (x < acc) return id; }
-    return entries.at(-1)[0];
+  /** Same shuffle as the server (src/engine/exclusive/lane-slash.js). */
+  function waveFromHash(c, n, b, dv) {
+    const lanes = [...'F'.repeat(n), ...'B'.repeat(b), ...'-'.repeat(c.lanes - n - b)];
+    for (let i = c.lanes - 1, word = 0; i >= 1; i--, word++) {
+      const j = Math.floor((dv.getUint32(word * 4) / 4294967296) * (i + 1));
+      [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
+    }
+    const dragon = dv.getUint32(28) / 4294967296 < c.dragon_chance ? lanes.indexOf('F') : -1;
+    return { lanes, dragon };
   }
 
   window.addEventListener('DOMContentLoaded', () => { window.game = new Game(); window.game.boot(); });
