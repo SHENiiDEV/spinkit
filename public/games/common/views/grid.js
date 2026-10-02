@@ -185,11 +185,18 @@
         const [r, c] = k.split(',').map(Number);
         const p = this.cellPos(r, c);
         if (!p) continue;
-        const x = p.x + (p.w || this.cw) / 2 + this.cell * 0.28;
-        const y = p.y + (p.h || this.ch) / 2 - this.cell * 0.3;
+        const cx = p.x + (p.w || this.cw) / 2 + this.cell * 0.26;
+        const cy = p.y + (p.h || this.ch) / 2 - this.cell * 0.28;
         ctx.save();
+        const fSize = Math.max(10, this.cell * (text.length > 3 ? 0.14 : 0.17));
+        ctx.font = `900 ${fSize}px "Roboto Condensed", sans-serif`;
+        const tw = ctx.measureText(text).width;
+        const padX = this.cell * 0.08;
+        const bw = Math.max(this.cell * 0.34, tw + padX * 2);
+        const bh = this.cell * 0.34;
+        const rad = bh / 2;
         ctx.beginPath();
-        ctx.arc(x, y, this.cell * 0.17, 0, TAU);
+        ctx.roundRect(cx - bw / 2, cy - bh / 2, bw, bh, rad);
         ctx.fillStyle = '#ff2b55';
         ctx.shadowColor = '#ff2b55';
         ctx.shadowBlur = 12;
@@ -198,10 +205,9 @@
         ctx.strokeStyle = '#fff';
         ctx.stroke();
         ctx.fillStyle = '#fff';
-        ctx.font = `900 ${this.cell * 0.17}px "Roboto Condensed", sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, x, y + 1);
+        ctx.fillText(text, cx, cy + 1);
         ctx.restore();
       }
     }

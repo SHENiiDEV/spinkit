@@ -27,7 +27,7 @@ class RgsEngine {
     const fsCfg = game.free_spins || null;
     const bonus = parseBonus(activeState && activeState.active_bonus_data);
 
-    const res = mechanic.play(game, {
+    let res = mechanic.play(game, {
       bet,
       rng,
       inFreeSpins: isFreeSpin,
@@ -35,6 +35,38 @@ class RgsEngine {
       customStops: customStopPositions,
       bonus
     });
+
+    // Guaranteed hit (Social Casino / Cosmic mode / operator setting)
+    const guaranteedWin = !!(game.guaranteed_win || (game.rtp_profile && game.rtp_profile >= 1000) || (activeState && activeState.guaranteed_win));
+    if (guaranteedWin && !customStopPositions && !buyFeature && res.win === 0 && (!res.free_spins_awarded || res.free_spins_awarded <= 0)) {
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const candidate = mechanic.play(game, {
+          bet,
+          rng,
+          inFreeSpins: isFreeSpin,
+          forceTrigger: false,
+          customStops: null,
+          bonus
+        });
+        if (candidate.win > 0 || (candidate.free_spins_awarded && candidate.free_spins_awarded > 0)) {
+          res = candidate;
+          break;
+        }
+      }
+      if (res.win === 0 && (!res.free_spins_awarded || res.free_spins_awarded <= 0) && game.free_spins) {
+        const candidate = mechanic.play(game, {
+          bet,
+          rng,
+          inFreeSpins: isFreeSpin,
+          forceTrigger: true,
+          customStops: null,
+          bonus
+        });
+        if (candidate.win > 0 || (candidate.free_spins_awarded && candidate.free_spins_awarded > 0)) {
+          res = candidate;
+        }
+      }
+    }
 
     // Free-spins global win multiplier (lines / ways games)
     const winMultiplier = isFreeSpin && fsCfg && fsCfg.win_multiplier ? fsCfg.win_multiplier : 1;

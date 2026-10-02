@@ -29,6 +29,8 @@
   }
 
   const WIN_TIERS = [
+    { x: 10000, label: 'ASTRONOMICAL WIN' },
+    { x: 1000, label: 'COSMIC WIN' },
     { x: 100, label: 'EPIC WIN' },
     { x: 50, label: 'SUPER MEGA WIN' },
     { x: 25, label: 'MEGA WIN' },

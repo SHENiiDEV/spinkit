@@ -7,7 +7,7 @@ const jackpots = require('./jackpots');
 const db = () => dbService.db;
 
 const PUBLIC_FIELDS = ['id', 'code', 'name', 'status', 'currency', 'float_balance', 'float_unlimited', 'ip_whitelist', 'require_signature',
-  'rtp_profile', 'min_bet', 'max_bet', 'max_win_x', 'jackpot_enabled', 'demo_refill', 'lobby_url', 'notes', 'created_at'];
+  'rtp_profile', 'min_bet', 'max_bet', 'max_win_x', 'guaranteed_win', 'wild_x1000', 'jackpot_enabled', 'demo_refill', 'lobby_url', 'notes', 'created_at'];
 
 function present(m, { withSecret = false } = {}) {
   if (!m) return null;
@@ -17,6 +17,8 @@ function present(m, { withSecret = false } = {}) {
   out.float_unlimited = !!m.float_unlimited;
   out.require_signature = !!m.require_signature;
   out.jackpot_enabled = !!m.jackpot_enabled;
+  out.guaranteed_win = !!m.guaranteed_win;
+  out.wild_x1000 = !!m.wild_x1000;
   out.demo_refill = !!m.demo_refill;
   out.has_signing_secret = !!m.signing_secret;
   if (withSecret) out.signing_secret = m.signing_secret;
@@ -50,7 +52,9 @@ function validateCurrency(c) {
 
 function validateProfile(p) {
   const v = Number(p);
-  if (!RTP_PROFILES.includes(v)) throw bad('INVALID_RTP_PROFILE', `RTP profile must be one of ${RTP_PROFILES.join(', ')}`);
+  if (!Number.isFinite(v) || v < 10 || v > 100000000) {
+    throw bad('INVALID_RTP_PROFILE', `RTP profile must be a number between 10 and 100,000,000 (or one of: ${RTP_PROFILES.join(', ')})`);
+  }
   return v;
 }
 
@@ -68,10 +72,11 @@ function create(data, actor = 'system') {
   if (db().prepare('SELECT 1 FROM merchants WHERE code = ?').get(code)) throw new ApiError(409, 'DUPLICATE_CODE', `Merchant code "${code}" already exists`);
   const currency = validateCurrency(data.currency || 'USD');
   const res = db().prepare(`
-    INSERT INTO merchants (code, name, currency, float_balance, float_unlimited, rtp_profile, jackpot_enabled, signing_secret, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO merchants (code, name, currency, float_balance, float_unlimited, rtp_profile, guaranteed_win, wild_x1000, jackpot_enabled, signing_secret, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(code, String(data.name).slice(0, 120), currency, Number(data.float_balance) || 0, data.float_unlimited ? 1 : 0,
-    data.rtp_profile ? validateProfile(data.rtp_profile) : 96, data.jackpot_enabled === false ? 0 : 1,
+    data.rtp_profile ? validateProfile(data.rtp_profile) : 96, data.guaranteed_win ? 1 : 0, data.wild_x1000 ? 1 : 0,
+    data.jackpot_enabled === false ? 0 : 1,
     randomToken('whsec_', 24), data.notes || null);
   const id = Number(res.lastInsertRowid);
   jackpots.ensureDefaults(id);
@@ -89,6 +94,8 @@ const UPDATABLE = {
   min_bet: (v) => validateLimit(v, 'min_bet'),
   max_bet: (v) => validateLimit(v, 'max_bet'),
   max_win_x: (v) => (v === null || v === '' ? null : Math.max(10, Math.floor(Number(v)))),
+  guaranteed_win: (v) => (v ? 1 : 0),
+  wild_x1000: (v) => (v ? 1 : 0),
   jackpot_enabled: (v) => (v ? 1 : 0),
   demo_refill: (v) => (v ? 1 : 0),
   lobby_url: (v) => (v ? String(v).slice(0, 500) : null),
@@ -273,12 +280,39 @@ function effective(merchant, gameId, setting = undefined, session = null) {
     steps = [game.bet_steps.reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a))];
   }
   const def = steps.includes(game.default_bet) ? game.default_bet : steps.reduce((a, b) => (Math.abs(b - game.default_bet) < Math.abs(a - game.default_bet) ? b : a));
+
+  const guaranteedWin = !!(
+    (session && session.guaranteed_win) ||
+    (s && s.guaranteed_win) ||
+    m.guaranteed_win ||
+    game.guaranteed_win ||
+    (game.rtp_profile && game.rtp_profile >= 1000)
+  );
+  const wildX1000 = !!(
+    (session && session.wild_x1000) ||
+    (s && s.wild_x1000) ||
+    m.wild_x1000 ||
+    game.wild_x1000 ||
+    (game.rtp_profile && game.rtp_profile >= 1000)
+  );
+  if (guaranteedWin) game.guaranteed_win = true;
+  if (wildX1000) {
+    game.wild_x1000 = true;
+    if (!game.wild_multipliers) {
+      game.wild_multipliers = { 2: 40, 5: 30, 10: 20, 25: 10, 50: 5, 100: 3, 500: 2, 1000: 5 };
+    } else {
+      game.wild_multipliers = { ...game.wild_multipliers, 1000: 5 };
+    }
+  }
+
   return {
     game,
     enabled,
     rtp: game.rtp,
     rtp_profile: game.rtp_profile || 96,
     qa,
+    guaranteed_win: guaranteedWin,
+    wild_x1000: wildX1000,
     bet_steps: steps,
     min_bet: steps[0],
     max_bet: steps[steps.length - 1],

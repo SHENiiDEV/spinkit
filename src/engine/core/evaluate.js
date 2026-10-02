@@ -28,14 +28,27 @@ function evaluateLine(paytable, symbols, positions) {
   return { ...best, positions: positions.slice(0, best.count) };
 }
 
-function evaluatePaylines(game, matrix, bet) {
+function evaluatePaylines(game, matrix, bet, wildMults = {}) {
   const lineBet = bet / game.bet_multiplier;
   const wins = [];
   game.paylines.forEach((rows, idx) => {
     const positions = rows.map((r, c) => [r, c]);
     const res = evaluateLine(game.paytable, positions.map(([r, c]) => matrix[r][c]), positions);
     if (res) {
-      wins.push({ line_index: idx + 1, symbol: res.symbol, count: res.count, positions: res.positions, multiplier: res.mult, payout: Math.floor(lineBet * res.mult) });
+      let lineMult = 1;
+      res.positions.forEach(([r, c]) => {
+        if (wildMults[`${r},${c}`]) lineMult *= wildMults[`${r},${c}`];
+      });
+      const payout = Math.floor(lineBet * res.mult * lineMult);
+      wins.push({
+        line_index: idx + 1,
+        symbol: res.symbol,
+        count: res.count,
+        positions: res.positions,
+        multiplier: res.mult,
+        ...(lineMult > 1 ? { wild_multiplier: lineMult } : {}),
+        payout
+      });
     }
   });
   return wins;

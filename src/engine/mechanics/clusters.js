@@ -3,6 +3,7 @@ const { collapseGrid, winPositions, copyGrid } = require('../core/cascade');
 const { scatterPositions, scatterResult, forceScattersAnywhere, bracket } = require('../core/free-spins');
 const { totalPayout } = require('../core/evaluate');
 const { buildWeights } = require('./tumble');
+const { isCosmic, enhanceCosmicClusters } = require('../core/cosmic');
 
 /**
  * "Clusters" mechanic — cluster pays + tumble + multiplier spots (reusable for any grid).
@@ -86,6 +87,7 @@ function play(game, { bet, rng, inFreeSpins = false, forceTrigger = false, bonus
 
   // spots: { 'r,c': value } — kept between free spins when sticky
   const spots = inFreeSpins && fs.sticky_spots && bonus.spots ? { ...bonus.spots } : {};
+  if (isCosmic(game)) enhanceCosmicClusters(game, grid, rng, spots);
   const initial = copyGrid(grid);
   const cascades = [];
   const allWins = [];

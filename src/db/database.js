@@ -231,11 +231,18 @@ class DatabaseService {
     this.addColumn('users', 'last_seen_at', 'TIMESTAMP');
     this.db.exec("UPDATE users SET external_id = CAST(id AS TEXT) WHERE external_id IS NULL");
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_users_merchant_ext ON users (merchant_id, external_id)');
+    // merchants & games
+    this.addColumn('merchants', 'guaranteed_win', 'INT NOT NULL DEFAULT 0');
+    this.addColumn('merchants', 'wild_x1000', 'INT NOT NULL DEFAULT 0');
+    this.addColumn('merchant_games', 'guaranteed_win', 'INT');
+    this.addColumn('merchant_games', 'wild_x1000', 'INT');
     // sessions
     this.addColumn('session_tokens', 'merchant_id', 'INTEGER NOT NULL DEFAULT 1');
     this.addColumn('session_tokens', 'rtp_profile', 'INT');
     this.addColumn('session_tokens', 'test_mode', 'INT NOT NULL DEFAULT 0');
     this.addColumn('session_tokens', 'force_feature', 'INT NOT NULL DEFAULT 0');
+    this.addColumn('session_tokens', 'guaranteed_win', 'INT NOT NULL DEFAULT 0');
+    this.addColumn('session_tokens', 'wild_x1000', 'INT NOT NULL DEFAULT 0');
     this.addColumn('session_tokens', 'lobby_url', 'TEXT');
     this.addColumn('session_tokens', 'client_ip', 'TEXT');
     this.addColumn('session_tokens', 'spins', 'INT NOT NULL DEFAULT 0');
@@ -355,11 +362,12 @@ class DatabaseService {
     const expiresAt = Date.now() + ttlMinutes * 60 * 1000;
     const user = this.findUser(userId);
     this.db.prepare(`
-      INSERT INTO session_tokens (token, user_id, game_id, expires_at, merchant_id, rtp_profile, test_mode, force_feature, lobby_url, client_ip)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO session_tokens (token, user_id, game_id, expires_at, merchant_id, rtp_profile, test_mode, force_feature, guaranteed_win, wild_x1000, lobby_url, client_ip)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id, game_id = excluded.game_id, expires_at = excluded.expires_at
     `).run(token, userId, gameId, expiresAt, extra.merchant_id || (user ? user.merchant_id : 1),
       extra.rtp_profile == null ? null : extra.rtp_profile, extra.test_mode ? 1 : 0, extra.force_feature ? 1 : 0,
+      extra.guaranteed_win ? 1 : 0, extra.wild_x1000 ? 1 : 0,
       extra.lobby_url || null, extra.client_ip || null);
     return { token, expires_at: expiresAt };
   }

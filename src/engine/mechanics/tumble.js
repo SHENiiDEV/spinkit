@@ -2,6 +2,7 @@ const { weightedTable } = require('../rng');
 const { collapseGrid, winPositions, copyGrid } = require('../core/cascade');
 const { scatterPositions, scatterResult } = require('../core/free-spins');
 const { totalPayout } = require('../core/evaluate');
+const { isCosmic, enhanceCosmicTumble } = require('../core/cosmic');
 
 /**
  * "Tumble" / pay-anywhere mechanic.
@@ -76,6 +77,7 @@ function play(game, { bet, rng, inFreeSpins = false, forceTrigger = false, bonus
 
   let grid = Array.from({ length: rows }, () => Array.from({ length: cols }, draw));
   if (forceTrigger) forceScatterColumns(grid, game.free_spins.trigger, rng);
+  if (isCosmic(game)) enhanceCosmicTumble(game, grid, rng);
 
   const initial = copyGrid(grid);
   const cascades = [];

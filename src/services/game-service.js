@@ -46,6 +46,9 @@ function publicGameConfig(game, eff = null, merchant = null) {
     rtp_profile: game.rtp_profile || 96,
     volatility: game.volatility,
     max_win_x: eff ? eff.max_win_x : game.max_win_x,
+    guaranteed_win: !!(eff ? eff.guaranteed_win : game.guaranteed_win),
+    wild_x1000: !!(eff ? eff.wild_x1000 : game.wild_x1000),
+    wild_multipliers: game.wild_multipliers ? Object.keys(game.wild_multipliers).map(Number).sort((a, b) => a - b) : null,
     free_spins: fs
       ? {
         trigger: fs.trigger,
@@ -88,7 +91,9 @@ function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MI
   let rtpProfile = null;
   let testMode = false;
   let forceFeature = false;
-  if (test && (test.rtp_profile != null || test.force_feature)) {
+  let guaranteedWin = false;
+  let wildX1000 = false;
+  if (test && (test.rtp_profile != null || test.force_feature || test.guaranteed_win || test.always_win || test.wild_x1000)) {
     if (!player.is_test) {
       throw new ApiError(403, 'TEST_PLAYER_REQUIRED', 'Session RTP overrides and forced features are only allowed for players flagged as test accounts');
     }
@@ -99,6 +104,8 @@ function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MI
       rtpProfile = v;
     }
     forceFeature = !!test.force_feature;
+    guaranteedWin = !!(test.guaranteed_win || test.always_win || (rtpProfile && rtpProfile >= 1000));
+    wildX1000 = !!(test.wild_x1000 || (rtpProfile && rtpProfile >= 1000));
   } else if (player.is_test) {
     testMode = true;
   }
@@ -107,9 +114,10 @@ function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MI
   const ttl = Math.max(5, Math.min(24 * 60, Number(ttlMinutes) || SESSION_TTL_MIN));
   const { expires_at: expiresAt } = dbService.createSessionToken(token, player.id, gameId, ttl, {
     merchant_id: merchant.id, rtp_profile: rtpProfile, test_mode: testMode, force_feature: forceFeature,
+    guaranteed_win: guaranteedWin, wild_x1000: wildX1000,
     lobby_url: lobbyUrl || merchant.lobby_url || null, client_ip: clientIp
   });
-  if (testMode) dbService.audit(actor, 'session.test_create', `player:${player.id}`, { game_id: gameId, rtp_profile: rtpProfile, force_feature: forceFeature });
+  if (testMode) dbService.audit(actor, 'session.test_create', `player:${player.id}`, { game_id: gameId, rtp_profile: rtpProfile, force_feature: forceFeature, guaranteed_win: guaranteedWin, wild_x1000: wildX1000 });
 
   return {
     token,
