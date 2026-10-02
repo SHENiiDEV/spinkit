@@ -313,4 +313,59 @@ console.log('✔ Test 6: Revenge boost (bet cap, one use)');
 }
 console.log('✔ Test 7: Fruit Slash — committed cut, fair lanes, EV-neutral widths, shield, no leak, verifiable');
 
+// ------------------------------------------------------------------ 8. operator settings: bet ladder, helmet saves, language
+{
+  const m = merchants.get(1);
+  const slot = Object.values(GAMES_CATALOG).find((g) => !g.kind);
+  assert.strictEqual(merchants.effective(m, slot.id).max_bet, slot.max_bet, 'slots keep their ladder');
+  let eff = merchants.effective(m, 'apple_shooter');
+  assert.strictEqual(eff.max_bet, 10000, 'exclusive games open up to 100.00 by default');
+  assert.strictEqual(GAMES_CATALOG.apple_shooter.max_bet_limit, 500000, 'ladder reaches 5,000.00');
+  merchants.setGameSetting(1, 'apple_shooter', { max_bet: 100000 }, 'test');
+  eff = merchants.effective(m, 'apple_shooter');
+  assert.strictEqual(eff.max_bet, 100000, 'the operator opens higher bets');
+  assert(eff.bet_steps.includes(50000));
+
+  // helmet saves per round
+  assert.throws(() => merchants.setGameSetting(1, 'apple_shooter', { options: { helmet_max_saves: 99 } }, 'test'), (e) => e.code === 'INVALID_OPTIONS');
+  assert.throws(() => merchants.setGameSetting(1, 'apple_shooter', { options: { nope: 1 } }, 'test'), (e) => e.code === 'INVALID_OPTIONS');
+  merchants.setGameSetting(1, 'apple_shooter', { options: { helmet_max_saves: 1 } }, 'test');
+  assert.strictEqual(merchants.effective(m, 'apple_shooter').game.crash.helmet.max_saves, 1);
+  assert.strictEqual(GAMES_CATALOG.apple_shooter.crash.helmet.max_saves, undefined, 'the catalog game is not mutated');
+  const player = dbService.getUser(49105);
+  const launch = gameService.launch({ merchant: m, player, gameId: 'apple_shooter', baseUrl: 'http://x', lang: 'de' });
+  assert(launch.launch_url.endsWith('&lang=de'));
+  const t = launch.token;
+  const init = gameService.init(t);
+  assert.strictEqual(init.session.lang, 'de');
+  assert.strictEqual(init.game_config.crash.helmet.max_saves, 1);
+  assert(init.game_config.bet_steps.includes(100000));
+  assert.throws(() => gameService.launch({ merchant: m, player, gameId: 'apple_shooter', baseUrl: 'http://x', lang: 'xx' }), (e) => e.code === 'INVALID_LANG');
+  let saved = 0; let blocked = 0;
+  for (let i = 0, r = null; i < 400 && (saved < 3 || blocked < 2); i++) {
+    if (!r || !r.round) r = gameService.action(t, { action: 'start', bet: 200 });
+    const q = r.next;
+    const used = r.round.saves || 0;
+    if (used >= 1 && q.helmet_price == null) {
+      assert.throws(() => gameService.action(t, { action: 'shoot', helmet: true, expect_shot: q.shot_index }), (e) => e.code === 'HELMET_UNAVAILABLE');
+      blocked++;
+    }
+    r = gameService.action(t, { action: 'shoot', helmet: q.helmet_price != null, expect_shot: q.shot_index });
+    if (r.shot.saved) saved++;
+    if (r.round) assert((r.round.saves || 0) <= 1, 'never more than one save per round');
+    if (r.round && r.round.level >= 6) r = gameService.action(t, { action: 'cashout' });
+  }
+  assert(saved >= 3 && blocked >= 2, 'saves happen and the limit blocks a second one');
+  merchants.setGameSetting(1, 'apple_shooter', { options: { helmet_max_saves: 0 } }, 'test');
+  assert.strictEqual(gameService.init(t).game_config.crash.helmet, null, '0 switches the helmet off');
+  merchants.setGameSetting(1, 'apple_shooter', { options: { helmet_max_saves: null }, max_bet: null }, 'test');
+  assert.strictEqual(merchants.effective(m, 'apple_shooter').game.crash.helmet.max_saves, undefined, 'null restores the game default');
+  assert.strictEqual(merchants.effective(m, 'fruit_slash').options.helmet_max_saves, 1, 'Fruit Slash default: one shield');
+  // bulk updates skip games without the option
+  merchants.setGameSetting(1, '*', { options: { helmet_max_saves: 2 }, filter: { category: 'exclusive' } }, 'test');
+  assert.strictEqual(merchants.effective(m, 'fruit_slash').game.crash.helmet.max_saves, 2);
+  merchants.setGameSetting(1, '*', { options: { helmet_max_saves: null }, filter: { category: 'exclusive' } }, 'test');
+}
+console.log('✔ Test 8: operator settings — bet ladder above 100.00, helmet saves per round, session language');
+
 console.log('All SpinKit Exclusive tests passed.');

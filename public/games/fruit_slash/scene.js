@@ -12,6 +12,7 @@
  *   scene.banner(text, sub, tone) · scene.coins(x, y, n)
  */
 (function () {
+  const tr = (k, fb) => (window.I18N && window.I18N.has(k) ? window.I18N.t(k) : fb);
   const W = 960;
   const H = 540;
   const G = 980; // gravity, px/s²
@@ -194,7 +195,7 @@
           const m = w.steps[w.cutCount];
           w.cutCount += 1;
           if (m) this.pop(`x${m.toFixed(2)}`, o.x, o.y - 56, w.cutCount > 2 ? '#ffd23f' : '#ffffff', 26 + Math.min(4, w.cutCount) * 4);
-          if (o.type === 'dragon') { this.coins(o.x, o.y, 26); this.pop('DRAGON FRUIT!', o.x, o.y - 100, '#ffd23f', 34); if (window.SFX) setTimeout(() => window.SFX.coin(), 80); }
+          if (o.type === 'dragon') { this.coins(o.x, o.y, 26); this.pop(tr('scene.dragon', 'DRAGON FRUIT!'), o.x, o.y - 100, '#ffd23f', 34); if (window.SFX) setTimeout(() => window.SFX.coin(), 80); }
         }
       }
     }
@@ -227,7 +228,7 @@
         this.flash = 0.6;
         this.shake = 0.35;
         if (window.SFX) setTimeout(() => window.SFX.shield(), 120);
-        this.pop('SHIELD!', o.x, o.y - 80, '#7ad7ff', 46);
+        this.pop(tr('scene.shield', 'SHIELD!'), o.x, o.y - 80, '#7ad7ff', 46);
         return;
       }
       this.flash = 1;
@@ -470,7 +471,7 @@
         g.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + Math.PI / 6; i ? g.lineTo(Math.cos(a) * 20, Math.sin(a) * 20) : g.moveTo(Math.cos(a) * 20, Math.sin(a) * 20); } g.closePath(); g.fill(); g.stroke();
         g.restore();
       }
-      if (this.canDraw && !this.cut && !this.draft) textOut(g, 'SWIPE ACROSS THE LANES TO SET YOUR CUT', W / 2, H * 0.72, 22, 'rgba(255,240,220,0.8)');
+      if (this.canDraw && !this.cut && !this.draft) textOut(g, tr('scene.swipe', 'SWIPE ACROSS THE LANES TO SET YOUR CUT'), W / 2, H * 0.72, 22, 'rgba(255,240,220,0.8)');
       if (this.bannerT) {
         const b = this.bannerT;
         const k = clamp(b.life / 1.8, 0, 1);
@@ -515,7 +516,12 @@
   }
 
   function textOut(g, s, x, y, size, color) {
-    g.font = `${size}px Bungee, "Roboto Condensed", sans-serif`;
+    const font = (px) => `${px}px Bungee, "Russo One Cyr", "Roboto Condensed", sans-serif`;
+    g.font = font(size);
+    // longer translations shrink to fit the field
+    const wmax = W - 60;
+    const w = g.measureText(s).width;
+    if (w > wmax) { size = Math.max(10, Math.floor(size * wmax / w)); g.font = font(size); }
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.lineJoin = 'round';
     g.lineWidth = size * 0.18; g.strokeStyle = 'rgba(20,8,2,0.9)'; g.strokeText(s, x, y);

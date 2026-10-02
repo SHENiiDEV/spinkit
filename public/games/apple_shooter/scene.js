@@ -945,7 +945,8 @@
       pxLine(g, x1, ay, x1 - dir * 4, ay - 4, tierColor, 2);
       pxLine(g, x1, ay, x1 - dir * 4, ay + 4, tierColor, 2);
       text(g, `${Math.abs(w).toFixed(1)}m/s`, 32, 11, '#fff4d6');
-      text(g, (this.tier || '').toUpperCase(), 12, 23, tierColor);
+      const I = window.I18N;
+      text(g, this.tier && I && I.has(`wind.short.${this.tier}`) ? I.t(`wind.short.${this.tier}`) : (this.tier || '').toUpperCase(), 12, 23, tierColor);
       if (this.mult) {
         text(g, this.mult, W / 2, 8, '#ffd23f', 'center', 16);
       }

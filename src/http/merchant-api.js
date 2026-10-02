@@ -32,7 +32,8 @@ function gameSummary(g, eff, baseUrl) {
       ...mechanics.features(g),
       sticky_giants: !!(g.free_spins && g.free_spins.sticky_giants)
     },
-    bets: { min: eff.min_bet, max: eff.max_bet, default: eff.default_bet, steps: eff.bet_steps },
+    bets: { min: eff.min_bet, max: eff.max_bet, default: eff.default_bet, steps: eff.bet_steps, ladder_max: g.max_bet_limit || g.max_bet },
+    options: eff.options,
     template: g.skin_of || g.id,
     thumbnail_url: g.theme.thumb ? `${baseUrl}${g.theme.thumb}` : null,
     cover_image: g.theme.stage ? `${baseUrl}${g.theme.stage.image}` : null,
@@ -89,6 +90,32 @@ function register(router) {
     };
   });
 
+  // ---------------------------------------------------------------- operator settings (self-service)
+  // Bet limits and game options the operator changes itself. RTP profiles stay with the provider (admin).
+  const OPERATOR_KEYS = ['enabled', 'min_bet', 'max_bet', 'options'];
+  const settingsOf = (m, id) => {
+    const r = merchants.listGameSettings(m.id).find((x) => x.game_id === id);
+    if (!r) throw notFound('GAME_NOT_FOUND', 'Game not found');
+    const { rtp_profile, ...rest } = r;
+    return rest;
+  };
+  router.get('/api/v2/games/:game_id/settings', auth, (ctx) => ({ status: 'success', settings: settingsOf(ctx.merchant, ctx.params.game_id) }));
+  router.patch('/api/v2/games/:game_id/settings', auth, (ctx) => {
+    if (!GAMES_CATALOG[ctx.params.game_id]) throw notFound('GAME_NOT_FOUND', 'Game not found');
+    const patch = Object.fromEntries(Object.entries(ctx.body || {}).filter(([k]) => OPERATOR_KEYS.includes(k)));
+    const unknown = Object.keys(ctx.body || {}).filter((k) => !OPERATOR_KEYS.includes(k));
+    if (unknown.length) throw bad('INVALID_REQUEST', `Not an operator setting: ${unknown.join(', ')} (allowed: ${OPERATOR_KEYS.join(', ')})`);
+    merchants.setGameSetting(ctx.merchant.id, ctx.params.game_id, patch, `merchant:${ctx.merchant.code}`);
+    return { status: 'success', settings: settingsOf(ctx.merchant, ctx.params.game_id) };
+  });
+  router.patch('/api/v2/merchant', auth, (ctx) => {
+    const allowed = ['default_lang', 'lobby_url'];
+    const extra = Object.keys(ctx.body || {}).filter((k) => !allowed.includes(k));
+    if (extra.length) throw bad('INVALID_REQUEST', `Only ${allowed.join(', ')} can be changed here`);
+    const m = merchants.update(ctx.merchant.id, ctx.body, `merchant:${ctx.merchant.code}`);
+    return { status: 'success', merchant: m };
+  });
+
   // ---------------------------------------------------------------- players & wallet
   router.post('/api/v2/players', auth, (ctx) => {
     const { external_id, username, is_test } = ctx.body;
@@ -118,10 +145,10 @@ function register(router) {
 
   // ---------------------------------------------------------------- sessions
   router.post('/api/v2/sessions', auth, (ctx) => {
-    const { external_id, game_id, username, lobby_url, ttl_minutes, test } = ctx.body;
+    const { external_id, game_id, username, lobby_url, ttl_minutes, test, lang } = ctx.body;
     if (!game_id) throw bad('INVALID_REQUEST', 'game_id is required');
     const { player } = players.getOrCreate(ctx.merchant, external_id, { username });
-    const r = gameService.launch({ merchant: ctx.merchant, player, gameId: game_id, baseUrl: ctx.baseUrl, ttlMinutes: ttl_minutes, test, lobbyUrl: lobby_url, clientIp: ctx.ip, actor: `merchant:${ctx.merchant.code}` });
+    const r = gameService.launch({ merchant: ctx.merchant, player, gameId: game_id, baseUrl: ctx.baseUrl, ttlMinutes: ttl_minutes, test, lobbyUrl: lobby_url, clientIp: ctx.ip, lang, actor: `merchant:${ctx.merchant.code}` });
     return { status: 'success', session: { ...r, player: players.present(players.byId(player.id)) } };
   });
 

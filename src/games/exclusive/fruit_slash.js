@@ -18,6 +18,13 @@ module.exports = {
   bet_multiplier: 20,
   volatility: 'medium / high',
   max_win_x: 5000,
+  // wider bet ladder ($0.20 … $5,000); players get up to $100 until the operator raises max_bet
+  coin_values: [1, 2, 3, 4, 5, 10, 15, 20, 25, 50, 75, 100, 150, 200, 250, 500, 750, 1000, 1250, 2500, 3750, 5000, 7500, 10000, 12500, 25000],
+  default_max_bet: 10000,
+  // settings the operator can change per game (merchant_games.options)
+  operator_options: {
+    helmet_max_saves: { label: 'Samurai Shield saves per round', min: 0, max: 10, default: 1, hint: '0 = shield off' }
+  },
   rtp: '96.50%',
 
   crash: {

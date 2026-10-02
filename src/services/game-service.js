@@ -81,7 +81,7 @@ function withCap(game, maxWinX) {
  * Creates a game session and returns the launch URL.
  * test: { rtp_profile, force_feature } — QA options, allowed only for players flagged as test.
  */
-function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MIN, test = null, lobbyUrl = null, clientIp = null, actor = 'api' }) {
+function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MIN, test = null, lobbyUrl = null, clientIp = null, lang = null, actor = 'api' }) {
   if (merchant.status !== 'active') throw new ApiError(403, 'MERCHANT_SUSPENDED', 'Merchant is suspended');
   if (player.status !== 'active') throw new ApiError(403, 'PLAYER_BLOCKED', 'Player is blocked');
   const game = GAMES_CATALOG[gameId];
@@ -111,19 +111,21 @@ function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MI
     testMode = true;
   }
 
+  const language = merchants.validateLang(lang) || merchant.default_lang || null;
   const token = crypto.randomUUID();
   const ttl = Math.max(5, Math.min(24 * 60, Number(ttlMinutes) || SESSION_TTL_MIN));
   const { expires_at: expiresAt } = dbService.createSessionToken(token, player.id, gameId, ttl, {
     merchant_id: merchant.id, rtp_profile: rtpProfile, test_mode: testMode, force_feature: forceFeature,
     guaranteed_win: guaranteedWin, wild_x1000: wildX1000,
-    lobby_url: lobbyUrl || merchant.lobby_url || null, client_ip: clientIp
+    lobby_url: lobbyUrl || merchant.lobby_url || null, client_ip: clientIp, lang: language
   });
   if (testMode) dbService.audit(actor, 'session.test_create', `player:${player.id}`, { game_id: gameId, rtp_profile: rtpProfile, force_feature: forceFeature, guaranteed_win: guaranteedWin, wild_x1000: wildX1000 });
 
   return {
     token,
     game_id: gameId,
-    launch_url: `${baseUrl}/games/${game.slug}/?token=${token}`,
+    launch_url: `${baseUrl}/games/${game.slug}/?token=${token}${language ? `&lang=${language}` : ''}`,
+    lang: language,
     expires_at: new Date(expiresAt).toISOString(),
     test_mode: testMode,
     rtp: testMode && rtpProfile ? `${rtpProfile.toFixed(2)}%` : eff.rtp

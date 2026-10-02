@@ -121,6 +121,7 @@ function init(token) {
     session: {
       test_mode: !!session.test_mode,
       lobby_url: session.lobby_url || null,
+      lang: session.lang || null,
       refill_enabled: !!merchant.demo_refill,
       expires_at: new Date(session.expires_at).toISOString()
     },

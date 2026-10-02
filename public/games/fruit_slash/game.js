@@ -8,22 +8,28 @@
   const TOKEN = new URLSearchParams(location.search).get('token');
   const SFX = window.SFX;
   const SIDE_ORDER = ['mega_combo', 'clean_sheet', 'dragon_fruit', 'insurance'];
-  const SIDE_HINT = {
-    mega_combo: '3 or more fruits in your cut, no bomb',
-    clean_sheet: 'Every fruit of the wave in your cut, no bomb',
-    dragon_fruit: 'The golden dragon fruit lands in your cut, no bomb',
-    insurance: 'A bomb lands in your cut'
-  };
+  const I18N = window.I18N;
+  const t = (k, v) => I18N.t(k, v);
+  const tp = (k, n, v) => I18N.p(k, n, v);
+
+  /** Sets text and shrinks the font until it fits its box (long amounts and currency suffixes in some languages). */
+  function fitText(el, text, min = 7) {
+    if (el.textContent !== text) el.textContent = text;
+    el.style.fontSize = '';
+    if (!el.clientWidth) return;
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth > el.clientWidth && size > min) { size -= 1; el.style.fontSize = `${size}px`; }
+  }
 
   class Money {
     constructor(cur) {
       this.cur = cur || { code: 'USD', symbol: '$', decimals: 2 };
       const d = this.cur.decimals;
       try {
-        this.nf = new Intl.NumberFormat(undefined, { style: 'currency', currency: this.cur.code, minimumFractionDigits: d, maximumFractionDigits: d });
+        this.nf = new Intl.NumberFormat(I18N.locale, { style: 'currency', currency: this.cur.code, currencyDisplay: 'narrowSymbol', minimumFractionDigits: d, maximumFractionDigits: d });
         this.nf.format(1);
       } catch {
-        const plain = new Intl.NumberFormat(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+        const plain = new Intl.NumberFormat(I18N.locale, { minimumFractionDigits: d, maximumFractionDigits: d });
         this.nf = { format: (v) => `${this.cur.symbol}${plain.format(v)}` };
       }
     }
@@ -54,12 +60,18 @@
     }
 
     async boot() {
-      this.loader(20, 'SHARPENING BLADES…');
-      if (!TOKEN) return this.fatal('No session token. Launch the game from the lobby.');
+      await I18N.init('fruit_slash', null);
+      I18N.apply();
+      this.loader(20, t('load.sharpening'));
+      if (!TOKEN) return this.fatal(t('load.no_token'));
       let d;
-      try { d = await api('init', {}); } catch (e) { return this.fatal(e.message); }
-      if (!d.game_config || !d.game_config.crash || d.game_config.crash.kind !== 'lane_slash') return this.fatal('This server does not run Fruit Slash yet — restart it.');
-      this.loader(60, 'PICKING FRUIT…');
+      try { d = await api('init', {}); } catch (e) { return this.fatal(this.errText(e)); }
+      if (!d.game_config || !d.game_config.crash || d.game_config.crash.kind !== 'lane_slash') return this.fatal(t('load.old_server'));
+      // the operator's language for this session (an explicit ?lang= or the player's own choice still wins)
+      const want = I18N.pick(d.session && d.session.lang);
+      if (want !== I18N.lang) { await I18N.load(want); I18N.apply(); }
+      document.title = t('title');
+      this.loader(60, t('load.picking'));
       this.cfg = d.game_config;
       this.crash = this.cfg.crash;
       this.money = new Money(d.currency || this.cfg.currency);
@@ -75,13 +87,14 @@
         this.mode = d.round.mode;
         this.betIndex = Math.max(0, this.steps.indexOf(d.round.bet));
         for (const s of d.round.shots) if (s.multiplier) this.reached[s.level] = s.multiplier;
-        this.toast('Unfinished round restored');
+        this.toast(t('toast.restored'));
       }
       this.bindUi();
       this.layout();
-      window.addEventListener('resize', () => this.layout());
+      if (document.fonts) document.fonts.ready.then(() => this.render()); // amounts are fitted to their boxes in the final font
+      window.addEventListener('resize', () => { this.layout(); this.render(); });
       try { await document.fonts.load('40px Bungee'); } catch { /* optional */ }
-      this.loader(100, 'READY');
+      this.loader(100, t('load.ready'));
       this.render();
       setTimeout(() => { $('app').classList.remove('loading'); this.layout(); }, 250);
     }
@@ -140,6 +153,7 @@
         if (url) { try { window.top.location.href = url; } catch { location.href = url; } } else if (window.parent !== window) window.parent.postMessage({ type: 'spinkit:close' }, '*');
         else location.href = '/';
       };
+      I18N.select($('langSel'), () => this.relocalize());
       $('sbStake').onclick = () => {
         const opts = this.steps.filter((s) => s <= this.bet);
         const i = opts.indexOf(this.sideStake);
@@ -193,8 +207,8 @@
         this.deadAt = null;
         this.shieldSel = false;
         this.scene.clearWave();
-        this.scene.banner('WAVE 1', 'SWIPE ACROSS THE LANES, THEN THROW', 'good');
-        (d.jackpot_wins || []).forEach((j) => this.toast(`JACKPOT ${j.name}: ${this.money.fmt(j.amount)}!`));
+        this.scene.banner(t('banner.wave1'), t('banner.wave1_sub'), 'good');
+        (d.jackpot_wins || []).forEach((j) => this.toast(t('toast.jackpot', { name: j.name, amount: this.money.fmt(j.amount) })));
       } catch (e) { this.error(e); }
       this.busy = false;
       this.render();
@@ -224,9 +238,9 @@
     async throwWave() {
       const sp = this.span;
       if (this.busy || !this.round || !this.next) return;
-      if (!sp) return this.toast('Swipe across the lanes to set your cut first', true);
+      if (!sp) return this.toast(t('toast.set_cut'), true);
       const cost = this.waveCost();
-      if (cost > this.balance) return this.toast('Not enough credit for the side bets', true);
+      if (cost > this.balance) return this.toast(t('sb.no_credit'), true);
       this.busy = true;
       this.render();
       const q = this.next;
@@ -251,25 +265,25 @@
       if (shot.side_bets.length && !$('talismans').classList.contains('open')) $('sbToggle').classList.add('ping');
       if (shot.side_win > 0) {
         this.flashSide(shot.side_bets.filter((x) => x.won).map((x) => x.id));
-        this.toast(`SIDE BETS +${this.money.fmt(shot.side_win)} → added to your credit`);
+        this.toast(t('sb.won_toast', { amount: this.money.fmt(shot.side_win) }));
         SFX.coin();
       }
       if (shot.saved) {
-        this.scene.banner('SHIELD!', `ONE STEP BACK · x${this.round.multiplier.toFixed(2)} · SAME WAVE AGAIN`, 'blue');
+        this.scene.banner(t('banner.shield'), t('banner.shield_sub', { x: this.round.multiplier.toFixed(2) }), 'blue');
         this.shieldSel = false;
       } else if (shot.outcome !== 'cut') {
         this.deadAt = shot.level;
-        this.scene.banner(shot.outcome === 'bomb' ? 'BOOM!' : 'MISSED!', shot.outcome === 'bomb' ? 'A BOMB WAS IN YOUR CUT' : 'NO FRUIT IN YOUR CUT', 'bad');
+        this.scene.banner(shot.outcome === 'bomb' ? t('banner.boom') : t('banner.missed'), shot.outcome === 'bomb' ? t('banner.boom_sub') : t('banner.missed_sub'), 'bad');
         this.history.unshift(this.historyRow(d));
       } else {
         this.reached[shot.level] = shot.multiplier;
         if (d.settled) {
-          this.scene.banner(d.settled.end === 'top' ? 'GRAND MASTER!' : 'MAX WIN!', `${this.money.fmt(d.settled.win)} · x${d.settled.multiplier.toFixed(2)}`, 'good');
+          this.scene.banner(d.settled.end === 'top' ? t('banner.grand') : t('banner.max_win'), `${this.money.fmt(d.settled.win)} · x${d.settled.multiplier.toFixed(2)}`, 'good');
           SFX.cashout();
           this.scene.coins(480, 300, 60);
           this.history.unshift(this.historyRow(d));
         } else {
-          this.scene.banner(`WAVE ${shot.level} CLEARED`, `${shot.fruits_cut} FRUIT${shot.fruits_cut > 1 ? 'S' : ''} · x${shot.multiplier.toFixed(2)} · NEXT: ${this.crash.wave_names[q.level].toUpperCase()}`, 'good');
+          this.scene.banner(t('banner.cleared', { level: shot.level }), tp('banner.cleared_sub', shot.fruits_cut, { x: shot.multiplier.toFixed(2), next: this.waveName(q.level).toUpperCase() }), 'good');
         }
       }
       if (!this.round) this.scene.setCut(null);
@@ -288,7 +302,7 @@
         this.apply(d);
         SFX.cashout();
         this.scene.coins(480, 300, 40);
-        this.scene.banner('CASHED OUT', `${this.money.fmt(s.win)} · x${s.multiplier.toFixed(2)}`, 'good');
+        this.scene.banner(t('banner.cashed'), `${this.money.fmt(s.win)} · x${s.multiplier.toFixed(2)}`, 'good');
         this.scene.setCut(null);
       } catch (e) { this.error(e); }
       this.busy = false;
@@ -304,9 +318,9 @@
       try {
         const res = await fetch('/api/v1/rgs/refill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: TOKEN }) });
         const d = await res.json();
-        if (!res.ok) throw new Error(d.message || 'Refill failed');
+        if (!res.ok) { const e = new Error(d.message || t('toast.refill_failed')); e.code = d.error; throw e; }
         this.balance = d.balance;
-        this.toast(`+${this.money.fmt(d.added)} FREE CREDITS`);
+        this.toast(t('toast.free', { amount: this.money.fmt(d.added) }));
         SFX.coin();
         this.render();
       } catch (e) { this.error(e); }
@@ -322,8 +336,8 @@
       const r = this.round;
       const q = this.next;
       const fmt = (v) => this.money.fmt(v);
-      $('valBalance').textContent = fmt(this.balance);
-      $('valBet').textContent = fmt(this.bet);
+      fitText($('valBalance'), fmt(this.balance));
+      fitText($('valBet'), fmt(this.bet));
       $('betDown').disabled = !!r || this.busy || this.betIndex === 0;
       $('betUp').disabled = !!r || this.busy || this.betIndex === this.steps.length - 1;
 
@@ -331,7 +345,7 @@
       if (!seg.children.length) {
         for (const [id, m] of Object.entries(this.crash.modes)) {
           const b = document.createElement('button');
-          b.textContent = m.label.toUpperCase();
+          b.textContent = I18N.has(`mode.${id}`) ? t(`mode.${id}`) : m.label.toUpperCase();
           b.dataset.mode = id;
           b.className = id;
           b.onclick = () => this.setMode(id);
@@ -344,12 +358,12 @@
       main.classList.toggle('go', !!r);
       main.disabled = this.busy || (!r && this.bet > this.balance) || (!!r && !this.span);
       if (r) {
-        $('btnMainTop').textContent = 'THROW';
+        $('btnMainTop').textContent = t('btn.throw');
         const cost = this.waveCost();
-        $('btnMainSub').textContent = !this.span ? 'SET YOUR CUT FIRST' : cost ? `WAGERS ${fmt(cost)}` : 'LOCKS YOUR CUT';
+        $('btnMainSub').textContent = !this.span ? t('btn.set_cut_first') : cost ? t('btn.wagers', { cost: fmt(cost) }) : t('btn.locks');
       } else {
-        $('btnMainTop').textContent = 'START';
-        $('btnMainSub').textContent = `BET ${fmt(this.bet)}`;
+        $('btnMainTop').textContent = t('btn.start');
+        $('btnMainSub').textContent = t('btn.bet', { bet: fmt(this.bet) });
       }
       const cash = $('btnCash');
       const canCash = !!r && r.level >= 1 && !this.busy;
@@ -365,8 +379,8 @@
       const lvl = r && q ? q.level : 1;
       const [n, b] = this.crash.modes[this.mode].waves[lvl - 1];
       $('nsLevel').textContent = `${r ? lvl : 0}/${this.crash.levels}`;
-      $('nsWave').textContent = this.crash.wave_names[lvl - 1].toUpperCase();
-      $('nsObjects').innerHTML = `<span class="chip f"><b>${n}</b>fruit</span><span class="chip bm"><b>${b}</b>bomb${b === 1 ? '' : 's'}</span><span class="chip e"><b>${this.crash.lanes - n - b}</b>empty</span>`;
+      $('nsWave').textContent = this.waveName(lvl - 1).toUpperCase();
+      $('nsObjects').innerHTML = `<span class="chip f"><b>${n}</b>${tp('chip.fruit', n)}</span><span class="chip bm"><b>${b}</b>${tp('chip.bomb', b)}</span><span class="chip e"><b>${this.crash.lanes - n - b}</b>${t('chip.empty')}</span>`;
       $('hudCut').hidden = !r;
       const step = !r ? 0 : this.busy ? 2 : sp ? 2 : 1;
       document.querySelectorAll('#steps li').forEach((li) => {
@@ -375,14 +389,14 @@
         li.classList.toggle('on', k === step || (k === 3 && cash));
         li.classList.toggle('done', !!r && k < step);
       });
-      $('nsCut').textContent = sp ? `${this.cut.to - this.cut.from + 1} LANE${this.cut.to > this.cut.from ? 'S' : ''}` : r ? 'SWIPE' : '—';
+      $('nsCut').textContent = sp ? tp('hud.lanes', this.cut.to - this.cut.from + 1) : r ? t('hud.swipe') : '—';
       if (sp) {
         $('nsChance').textContent = `${(sp.chance * 100).toFixed(1)}%`;
         const m = sp.multipliers;
         $('nsNext').textContent = m.length > 1 ? `x${m[0].toFixed(2)} – x${m.at(-1).toFixed(2)}` : `x${m[0].toFixed(2)}`;
       } else {
         $('nsChance').textContent = '—';
-        $('nsNext').textContent = r ? 'SET YOUR CUT' : `${this.crash.levels} WAVES`;
+        $('nsNext').textContent = r ? t('hud.set_cut') : t('hud.waves', { n: this.crash.levels });
       }
       this.renderSideBets();
       this.renderLadder();
@@ -396,16 +410,16 @@
       const bomb = cut.includes('B');
       const outside = [...shot.lanes].map((x, i) => (x === 'F' && (i < shot.cut.from || i > shot.cut.to) ? i + 1 : 0)).filter(Boolean);
       const why = (id, won) => {
-        if (id === 'insurance') return won ? 'a bomb was in your cut' : 'no bomb in your cut';
-        if (bomb) return 'a bomb was in your cut';
-        if (id === 'mega_combo') return won ? `${shot.fruits_cut} fruits in one cut` : `${shot.fruits_cut} fruit in the cut, needs ${this.crash.combo_min}`;
-        if (id === 'clean_sheet') return won ? `all ${q.fruits} fruits were in your cut` : `${outside.length} fruit outside your cut (lane ${outside.join(', ')})`;
-        if (id === 'dragon_fruit') return won ? 'the dragon fruit was in your cut' : shot.dragon < 0 ? 'no dragon fruit in this wave' : `it landed in lane ${shot.dragon + 1}, outside your cut`;
+        if (id === 'insurance') return won ? t('why.bomb_in') : t('why.no_bomb');
+        if (bomb) return t('why.bomb_in');
+        if (id === 'mega_combo') return won ? tp('why.combo_won', shot.fruits_cut) : t('why.combo_lost', { n: shot.fruits_cut, min: this.crash.combo_min });
+        if (id === 'clean_sheet') return won ? t('why.clean_won', { n: q.fruits }) : t('why.clean_lost', { n: outside.length, lanes: outside.join(', ') });
+        if (id === 'dragon_fruit') return won ? t('why.dragon_won') : shot.dragon < 0 ? t('why.no_dragon') : t('why.dragon_lost', { lane: shot.dragon + 1 });
         return '';
       };
       const fmt = (v) => this.money.fmt(v);
-      el.innerHTML = `<h3>SIDE BETS · WAVE ${shot.level}</h3>` + shot.side_bets.map((b) => `<div class="r ${b.won ? 'win' : 'lose'}"><b>${this.crash.side_bets[b.id].label} ×${b.odds.toFixed(2)}</b><span class="amt">${b.won ? `+${fmt(b.win)}` : `−${fmt(b.stake)}`}</span><span class="why">${why(b.id, b.won)}</span></div>`).join('') +
-        `<div class="note">Side bet wins go straight to your credit. They do not change the multiplier of your main bet.</div>`;
+      el.innerHTML = `<h3>${t('sb.results', { level: shot.level })}</h3>` + shot.side_bets.map((b) => `<div class="r ${b.won ? 'win' : 'lose'}"><b>${this.sideName(b.id)} ×${b.odds.toFixed(2)}</b><span class="amt">${b.won ? `+${fmt(b.win)}` : `−${fmt(b.stake)}`}</span><span class="why">${why(b.id, b.won)}</span></div>`).join('') +
+        `<div class="note">${t('sb.note')}</div>`;
       el.hidden = false;
     }
 
@@ -419,19 +433,20 @@
         insurance: '<svg viewBox="0 0 24 24"><circle cx="11" cy="14" r="7" fill="#22222a" stroke="#ff3b3b" stroke-width="1.5"/><path d="M15 8l3-3" stroke="#c8a070" stroke-width="2"/><circle cx="19" cy="4" r="1.6" fill="#ffd23f"/></svg>',
         shield: '<svg viewBox="0 0 24 24" fill="rgba(122,215,255,.25)" stroke="#7ad7ff" stroke-width="2"><path d="M12 2l8 4.6v9.2L12 21l-8-5.2V6.6z"/></svg>'
       };
+      const h = this.crash.helmet; // null when the operator switched the shield off
       const DESC = {
-        mega_combo: `Pays if ${this.crash.combo_min} or more fruits land in your cut and no bomb does. Needs a cut of at least ${this.crash.combo_min} lanes.`,
-        clean_sheet: 'Pays if every fruit of the wave lands in your cut and no bomb does. Wider cuts make it likelier.',
-        dragon_fruit: `A golden dragon fruit turns up in about 1 wave in ${Math.round(1 / this.crash.dragon_chance)}. Pays if it lands in your cut and no bomb does.`,
-        insurance: 'Pays if a bomb lands in your cut. Use it to hedge the main bet on a risky wave.',
-        shield: `From wave ${this.crash.helmet.from_level}, once per round. If a bomb lands in your cut, the shield takes the blast: your multiplier drops one step and you replay the wave. It does not save a cut with no fruit.`
+        mega_combo: t('desc.mega_combo', { n: this.crash.combo_min }),
+        clean_sheet: t('desc.clean_sheet'),
+        dragon_fruit: t('desc.dragon_fruit', { n: Math.round(1 / this.crash.dragon_chance) }),
+        insurance: t('desc.insurance'),
+        shield: h ? `${t('desc.shield', { level: h.from_level })}${h.max_saves ? ` ${tp('shield.per_round', h.max_saves)}.` : ''}` : ''
       };
       if (!row.children.length) {
-        for (const id of [...SIDE_ORDER, 'shield']) {
+        for (const id of [...SIDE_ORDER, ...(h ? ['shield'] : [])]) {
           const b = document.createElement('button');
           b.className = `sb${id === 'shield' ? ' shield' : ''}`;
           b.dataset.id = id;
-          const name = id === 'shield' ? (this.crash.helmet.label || 'Shield') : this.crash.side_bets[id].label;
+          const name = this.sideName(id);
           b.innerHTML = `<span class="ico">${ICONS[id]}</span><span class="sb-n">${name}</span><span class="sb-o">—</span><span class="sb-p"></span><span class="sb-d">${DESC[id]}</span><span class="tick"></span>`;
           b.onclick = () => {
             if (id === 'shield') this.shieldSel = !this.shieldSel; else this.sideSel[id] = !this.sideSel[id];
@@ -445,7 +460,7 @@
       const on = SIDE_ORDER.filter((id) => this.sideSel[id]).length + (this.shieldSel ? 1 : 0);
       const cost = this.waveCost();
       $('sbToggle').classList.toggle('active', on > 0);
-      $('sbSummary').textContent = on ? `${on} on${cost ? ` · ${this.money.fmt(cost)} this wave` : ''}` : 'tap to add · optional';
+      $('sbSummary').textContent = on ? (cost ? t('sb.on_cost', { n: on, cost: this.money.fmt(cost) }) : t('sb.on', { n: on })) : t('sb.tap_optional');
       const rtp = 0.965;
       for (const b of row.children) {
         const id = b.dataset.id;
@@ -456,16 +471,20 @@
           b.disabled = this.busy || !price;
           b.classList.toggle('on', !!(this.shieldSel && price));
           o.textContent = price ? this.money.fmt(price) : '—';
-          p.textContent = price ? `costs ${this.money.fmt(price)} for this wave` : this.round && this.round.saves ? 'used this round' : this.round && q ? `from wave ${this.crash.helmet.from_level}` : this.round ? 'set your cut to see the price' : 'once per round';
+          const used = this.round ? this.round.saves || 0 : 0;
+          p.textContent = price ? t('shield.costs', { price: this.money.fmt(price) })
+            : h.max_saves && used >= h.max_saves ? t('shield.used')
+              : this.round && q ? t('shield.from', { level: h.from_level })
+                : this.round ? t('shield.set_cut') : h.max_saves ? tp('shield.per_round', h.max_saves) : t('shield.from', { level: h.from_level });
           continue;
         }
         const odds = q ? q.side_bets[id] : null;
         b.disabled = this.busy || (!!q && !odds);
         b.classList.toggle('on', !!this.sideSel[id] && (!q || !!odds));
         o.textContent = odds ? `x${odds.toFixed(2)}` : '—';
-        if (odds) p.textContent = `pays ${this.money.fmt(Math.floor(this.sideStake * odds))} · ≈ 1 in ${Math.max(1, Math.round(odds / rtp))}`;
-        else if (q) p.textContent = id === 'mega_combo' ? `needs a cut of ${this.crash.combo_min}+ lanes` : id === 'clean_sheet' ? `needs a cut of ${this.next.fruits}+ lanes` : 'not possible with this cut';
-        else p.textContent = this.round ? 'set your cut to see the odds' : 'odds appear once you set a cut';
+        if (odds) p.textContent = t('sb.pays', { amount: this.money.fmt(Math.floor(this.sideStake * odds)), n: Math.max(1, Math.round(odds / rtp)) });
+        else if (q) p.textContent = id === 'mega_combo' ? t('sb.needs_lanes', { n: this.crash.combo_min }) : id === 'clean_sheet' ? t('sb.needs_lanes', { n: this.next.fruits }) : t('sb.not_possible');
+        else p.textContent = this.round ? t('sb.set_cut_odds') : t('sb.odds_later');
       }
     }
 
@@ -487,7 +506,7 @@
       [...el.children].forEach((d, i) => {
         const L = i + 1;
         const rm = d.querySelector('.rm');
-        const comp = `${waves[i][0]}F·${waves[i][1]}B`;
+        const comp = t('ladder.comp', { f: waves[i][0], b: waves[i][1] });
         d.className = 'rung';
         if (r && L <= r.level) { d.classList.add('done'); rm.textContent = `x${fmtMult(this.reached[L] || 0)}`; return; }
         if (r && L === r.level + 1) { d.classList.add('next'); rm.textContent = sp ? `x${fmtMult(sp.multipliers.at(-1))}` : comp; return; }
@@ -510,35 +529,65 @@
       this.toastT = setTimeout(() => { el.hidden = true; }, 2200);
     }
 
-    error(e) { console.warn(e); this.toast(e.message || 'Something went wrong', true); }
+    errText(e) {
+      if (e && e.code && I18N.has(`err.${e.code}`)) return t(`err.${e.code}`);
+      if (e instanceof TypeError) return t('err.NETWORK');
+      return (e && e.message) || t('toast.error');
+    }
+
+    error(e) { console.warn(e); this.toast(this.errText(e), true); }
+
+    waveName(i) { return I18N.has(`wave.${i}`) ? t(`wave.${i}`) : this.crash.wave_names[i]; }
+
+    sideName(id) {
+      if (I18N.has(`side.${id}`)) return t(`side.${id}`);
+      return id === 'shield' ? (this.crash.helmet && this.crash.helmet.label) || 'Shield' : this.crash.side_bets[id].label;
+    }
+
+    /** Language switched in the rules sheet: redraw every text. */
+    relocalize() {
+      I18N.apply();
+      document.title = t('title');
+      this.money = new Money(this.money.cur);
+      $('modeSeg').innerHTML = '';
+      $('sbRow').innerHTML = '';
+      $('sbLast').hidden = true;
+      this.render();
+      this.openRules();
+    }
 
     // -------------------------------------------------------------- sheets
     openRules() {
       const c = this.crash;
       const pct = (v) => `${(v * 100).toFixed(2)}%`;
-      const waves = Object.entries(c.modes).map(([id, m]) => `<tr><td>${m.label}</td>${m.waves.map(([f, b]) => `<td>${f}F ${b}B</td>`).join('')}</tr>`).join('');
-      const sides = SIDE_ORDER.map((id) => `<tr><td>${c.side_bets[id].label}</td><td>${SIDE_HINT[id]}</td><td class="n">${pct(c.side_bets[id].rtp)}</td></tr>`).join('');
+      const modeName = (id, m) => (I18N.has(`mode.${id}`) ? t(`mode.${id}`) : m.label);
+      const waves = Object.entries(c.modes).map(([id, m]) => `<tr><td>${modeName(id, m)}</td>${m.waves.map(([f, b]) => `<td>${t('rules.wave_cell', { f, b })}</td>`).join('')}</tr>`).join('');
+      const sides = SIDE_ORDER.map((id) => `<tr><td>${this.sideName(id)}</td><td>${t(`hint.${id}`)}</td><td class="n">${pct(c.side_bets[id].rtp)}</td></tr>`).join('');
+      const h = c.helmet;
+      const shield = h
+        ? `<p>${t('rules.shield_text', { level: h.from_level, rtp: pct(h.rtp) })}${h.max_saves ? ` ${tp('rules.shield_limit', h.max_saves)}` : ''}</p>`
+        : `<p>${t('rules.shield_off')}</p>`;
       $('rulesBody').innerHTML = `
-        <p>Fruit Slash is a <b>step crash</b> game played over ${c.lanes} lanes. Place a bet, then before every wave <b>swipe across the lanes to set your cut</b>.
-          Press THROW: your cut is locked in and only then the wave is thrown — fruit, bombs and empty lanes.</p>
+        <p>${t('rules.intro', { lanes: c.lanes })}</p>
         <ul>
-          <li>Every fruit in your cut is sliced and raises the multiplier; more fruit in one cut pays more.</li>
-          <li>A bomb in your cut ends the round. A cut with no fruit in it also ends the round.</li>
-          <li><b>Cash out</b> after any cleared wave. Clearing wave ${c.levels} cashes out automatically.</li>
-          <li>A wider cut catches more fruit and more risk. The chance and the multipliers for your width are shown before you throw.</li>
+          <li>${t('rules.li1')}</li>
+          <li>${t('rules.li2')}</li>
+          <li>${t('rules.li3', { levels: c.levels })}</li>
+          <li>${t('rules.li4')}</li>
         </ul>
-        <h3>WAVES</h3>
-        <div class="tbl-wrap"><table class="tbl"><tr><th>Risk</th>${c.wave_names.map((w, i) => `<th>${i + 1}</th>`).join('')}</tr>${waves}</table></div>
-        <p class="muted">F = fruit, B = bombs, the rest of the ${c.lanes} lanes are empty. Which lane holds what is decided by the fair hash after your cut is locked.</p>
-        <h3>SIDE BETS (NEXT WAVE ONLY)</h3>
-        <p>Pick side bets and a stake (up to your bet) before a wave. Their odds depend on the width of your cut and settle on that wave.</p>
-        <table class="tbl"><tr><th>Bet</th><th>Wins when</th><th>RTP</th></tr>${sides}</table>
-        <h3>SAMURAI SHIELD</h3>
-        <p>From wave ${c.helmet.from_level}, once per round, buy a shield for the next wave. If a bomb is in your cut, the shield absorbs it: the multiplier goes back one step and you play the same wave again. It does not cover a cut with no fruit. Price = chance of a bomb in your cut × the multiplier it keeps (RTP ${pct(c.helmet.rtp)}).</p>
-        <h3>RTP &amp; FAIRNESS</h3>
-        <p>Theoretical RTP of the main bet: <b>${pct(c.rtp)}</b> for any cut widths and any cash-out point (every wave is priced so its average return is exactly the stake; multipliers are rounded to 0.01). Maximum win ${this.cfg.max_win_x.toLocaleString()}× bet: a width is only offered while its best result stays within it.</p>
-        <p>The lanes of every wave come from HMAC-SHA256 of the server seed (its hash is shown before you play), your client seed, the round nonce and the wave number. Your cut is stored before that wave is built, so neither side can change the result. Rotate the seed in <b>FAIR</b> to check every wave you played.</p>
-        <p class="muted">Malfunction voids all pays and plays. An unfinished round is kept and restored the next time you open the game.</p>`;
+        <h3>${t('rules.waves')}</h3>
+        <div class="tbl-wrap"><table class="tbl"><tr><th>${t('rules.risk')}</th>${c.wave_names.map((w, i) => `<th title="${this.waveName(i)}">${i + 1}</th>`).join('')}</tr>${waves}</table></div>
+        <p class="muted">${t('rules.waves_note', { lanes: c.lanes })}</p>
+        <h3>${t('rules.sides')}</h3>
+        <p>${t('rules.sides_text')}</p>
+        <table class="tbl"><tr><th>${t('rules.bet')}</th><th>${t('rules.wins_when')}</th><th>RTP</th></tr>${sides}</table>
+        <h3>${t('rules.shield')}</h3>
+        ${shield}
+        <h3>${t('rules.rtp')}</h3>
+        <p>${t('rules.rtp_text', { rtp: pct(c.rtp), max: this.cfg.max_win_x.toLocaleString(I18N.locale) })}</p>
+        <p>${t('rules.fair_text')}</p>
+        <p>${t('rules.bets', { min: this.money.fmt(this.steps[0]), max: this.money.fmt(this.steps[this.steps.length - 1]) })}</p>
+        <p class="muted">${t('rules.malfunction')}</p>`;
       $('modalRules').hidden = false;
     }
 
@@ -561,7 +610,7 @@
         this.revealed[rv.server_seed_hash] = rv.server_seed;
         this.apply(d);
         $('pfRevealed').hidden = false;
-        $('pfRevealed').innerHTML = `Revealed server seed (hash <code>${rv.server_seed_hash.slice(0, 16)}…</code>, ${rv.rounds_played} rounds):<br><code>${rv.server_seed}</code>`;
+        $('pfRevealed').innerHTML = `${t('fair.revealed', { hash: rv.server_seed_hash.slice(0, 16), rounds: rv.rounds_played })}<br><code>${rv.server_seed}</code>`;
         $('vServer').value = rv.server_seed;
         $('vClient').value = rv.client_seed;
         SFX.coin();
@@ -571,7 +620,7 @@
 
     renderHistory() {
       const el = $('pfHistory');
-      if (!this.history.length) { el.innerHTML = '<p class="muted">No rounds yet.</p>'; return; }
+      if (!this.history.length) { el.innerHTML = `<p class="muted">${t('fair.no_rounds')}</p>`; return; }
       el.innerHTML = '';
       this.history.slice(0, 30).forEach((h) => {
         const row = document.createElement('div');
@@ -579,10 +628,10 @@
         const seed = this.revealed && this.revealed[h.server_seed_hash];
         const s = h.settled || {};
         const won = s.win > 0;
-        row.innerHTML = `<span>#${h.nonce}</span><span class="dots">${h.shots.map((x) => `<i class="dot ${x.saved ? 'saved' : x.outcome}" title="Wave ${x.level}: ${x.outcome}"></i>`).join('')}</span>
-          <span class="res ${won ? 'win' : 'lose'}">${won ? `+${this.money.fmt(s.win)} x${s.multiplier.toFixed(2)}` : 'LOST'}</span>`;
+        row.innerHTML = `<span>#${h.nonce}</span><span class="dots">${h.shots.map((x) => `<i class="dot ${x.saved ? 'saved' : x.outcome}" title="${t('fair.dot', { level: x.level, outcome: x.outcome })}"></i>`).join('')}</span>
+          <span class="res ${won ? 'win' : 'lose'}">${won ? `+${this.money.fmt(s.win)} x${s.multiplier.toFixed(2)}` : t('fair.lost')}</span>`;
         const b = document.createElement('button');
-        b.textContent = seed ? 'verify' : 'rotate seed to verify';
+        b.textContent = seed ? t('fair.btn_verify') : t('fair.btn_rotate');
         b.disabled = !seed;
         b.onclick = () => this.verifyRound(h, seed);
         row.appendChild(b);
@@ -593,7 +642,7 @@
     async verifyRound(h, seed) {
       const lines = [];
       const sh = await sha256(seed);
-      lines.push(`sha256(server_seed) = ${sh}  ${sh === h.server_seed_hash ? '✓ matches' : '✗ MISMATCH'}`);
+      lines.push(`sha256(server_seed) = ${sh}  ${sh === h.server_seed_hash ? t('fair.matches') : t('fair.mismatch')}`);
       for (const s of h.shots) {
         const v = await fairShot(seed, h.client_seed, h.nonce, s.i);
         const [n, b] = this.crash.modes[h.mode].waves[s.level - 1];
@@ -608,13 +657,13 @@
 
     async verifyForm() {
       const server = $('vServer').value.trim();
-      if (!server) { $('vOut').textContent = 'Enter a revealed server seed.'; return; }
+      if (!server) { $('vOut').textContent = t('fair.enter_seed'); return; }
       const v = await fairShot(server, $('vClient').value.trim(), Number($('vNonce').value), Number($('vShot').value));
       const lines = [`sha256(server_seed) = ${await sha256(server)}`, `hmac = ${v.hex}`];
       for (const [id, m] of Object.entries(this.crash.modes)) {
-        lines.push(`${m.label}, by wave: ` + m.waves.map(([n, b], i) => `W${i + 1} ${waveFromHash(this.crash, n, b, v.bytes).lanes.join('')}`).join(' · '));
+        lines.push(`${t('fair.by_wave', { mode: I18N.has(`mode.${id}`) ? t(`mode.${id}`) : m.label })} ` + m.waves.map(([n, b], i) => `W${i + 1} ${waveFromHash(this.crash, n, b, v.bytes).lanes.join('')}`).join(' · '));
       }
-      $('vOut').textContent = lines.join('\n') + '\n(F fruit, B bomb, - empty; lane 1 first)';
+      $('vOut').textContent = `${lines.join('\n')}\n${t('fair.legend')}`;
     }
 
     openSkins() {
@@ -627,7 +676,7 @@
         const cv = document.createElement('canvas');
         cv.width = 180; cv.height = 100;
         d.appendChild(cv);
-        d.insertAdjacentHTML('beforeend', `<b>${s.name}</b><span class="lock-l">${ok ? (s.id === this.skin ? 'EQUIPPED' : 'TAP TO EQUIP') : `${Math.min(this.stats.shots, s.shots)} / ${s.shots} WAVES`}</span>`);
+        d.insertAdjacentHTML('beforeend', `<b>${I18N.has(`skin.${s.id}`) ? t(`skin.${s.id}`) : s.name}</b><span class="lock-l">${ok ? (s.id === this.skin ? t('skins.equipped') : t('skins.equip')) : t('skins.progress', { n: Math.min(this.stats.shots, s.shots), total: s.shots })}</span>`);
         window.FruitScene.drawBladePreview(cv, s.id);
         d.disabled = !ok;
         d.onclick = async () => {
