@@ -340,7 +340,7 @@
       g.setTransform(this.scale, 0, 0, this.scale, sx * this.scale, sy * this.scale);
 
       // lanterns
-      for (const lx of [60, W - 60]) {
+      for (const lx of [W * 0.3, W * 0.7]) {
         const sway = Math.sin(this.t * 1.3 + lx) * 4;
         g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2; g.beginPath(); g.moveTo(lx, 26); g.lineTo(lx + sway, 50); g.stroke();
         const glow = g.createRadialGradient(lx + sway, 84, 10, lx + sway, 84, 100);
@@ -360,7 +360,7 @@
         if (i) { g.fillStyle = 'rgba(255,240,220,0.07)'; g.fillRect(LX0 + LW * i - 1, 30, 2, H - 30); }
         g.fillStyle = inCut ? 'rgba(255,207,74,0.95)' : 'rgba(255,240,220,0.35)';
         g.font = '16px Bungee, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(String(i + 1), laneX(i), H - 18);
+        g.fillText(String(i + 1), laneX(i), H - 78);
       }
 
       // juice splats

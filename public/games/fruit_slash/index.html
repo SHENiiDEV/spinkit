@@ -21,32 +21,55 @@
       </div>
     </header>
 
-    <main class="stage-wrap">
-      <div class="stage" id="stage"><canvas id="scene"></canvas></div>
+    <main class="dojo">
+      <aside class="talismans" aria-label="Side bets">
+        <div class="tal-head">
+          <div>
+            <h2>Side bets</h2>
+            <p>Extra wagers on the <b>next wave only</b></p>
+          </div>
+          <button class="sb-stake" id="sbStake" title="Stake per side bet">STAKE <b id="sbStakeVal">$0.20</b></button>
+        </div>
+        <details class="tal-how" id="talHow">
+          <summary>How side bets work</summary>
+          <ol>
+            <li>Tick any side bet before you throw. Each one costs the stake shown on top (up to your main bet).</li>
+            <li>Its odds depend on how wide your cut is, so they appear once you set the cut.</li>
+            <li>It is settled on that one wave, win or lose, whatever happens to your main bet.</li>
+            <li>Ticked side bets stay on for the next waves until you untick them.</li>
+          </ol>
+        </details>
+        <div class="tal-list" id="sbRow"></div>
+      </aside>
+
+      <section class="arena">
+        <ol class="steps" id="steps">
+          <li data-step="1"><i>1</i><span><b>Swipe your cut</b><em>across the lanes</em></span></li>
+          <li data-step="2"><i>2</i><span><b>Throw</b><em>the wave flies into it</em></span></li>
+          <li data-step="3"><i>3</i><span><b>Cash out</b><em>or go for the next wave</em></span></li>
+        </ol>
+        <div class="stage" id="stage">
+          <canvas id="scene"></canvas>
+          <div class="hud hud-tl"><span class="hud-k">WAVE <b id="nsLevel">—</b></span><span class="hud-v" id="nsWave">—</span></div>
+          <div class="hud hud-tr" id="nsObjects">—</div>
+          <div class="hud hud-b" id="hudCut">
+            <span><small>CUT</small><b id="nsCut">—</b></span>
+            <span><small>CHANCE</small><b id="nsChance">—</b></span>
+            <span class="hi"><small>IF CLEARED</small><b id="nsNext">—</b></span>
+          </div>
+        </div>
+      </section>
+
       <aside class="ladder" id="ladder" aria-label="Multiplier ladder"></aside>
     </main>
 
-    <section class="next-strip">
-      <div class="ns-item"><span class="ns-l">WAVE</span><span class="ns-v" id="nsLevel">—</span></div>
-      <div class="ns-item wide"><span class="ns-l" id="nsWave">—</span><span class="ns-v small" id="nsObjects">—</span></div>
-      <div class="ns-item"><span class="ns-l">YOUR CUT</span><span class="ns-v" id="nsCut">—</span></div>
-      <div class="ns-item"><span class="ns-l">CHANCE</span><span class="ns-v" id="nsChance">—</span></div>
-      <div class="ns-item hi"><span class="ns-l">IF CLEARED</span><span class="ns-v" id="nsNext">—</span></div>
-    </section>
-
-    <section class="sidebets">
-      <div class="sb-head"><span>SIDE BETS · NEXT WAVE</span><button class="sb-stake" id="sbStake">STAKE <b id="sbStakeVal">$0.20</b> ▾</button></div>
-      <div class="sb-row" id="sbRow"></div>
-    </section>
-
-    <footer class="controls">
-      <div class="ctl-box credit"><span class="ctl-l">CREDIT</span><span class="ctl-v" id="valBalance">—</span><button class="refill" id="btnRefill" title="Free credits">+</button></div>
-      <div class="ctl-box bet">
-        <span class="ctl-l">BET</span>
-        <div class="bet-row"><button class="step" id="betDown" aria-label="Lower bet">−</button><span class="ctl-v" id="valBet">—</span><button class="step" id="betUp" aria-label="Raise bet">+</button></div>
+    <footer class="tray">
+      <div class="wallet">
+        <div class="w-cell credit"><small>CREDIT</small><b id="valBalance">—</b><button class="refill" id="btnRefill" title="Free credits">+</button></div>
+        <div class="w-cell bet"><small>BET</small><div class="bet-row"><button class="step" id="betDown" aria-label="Lower bet">−</button><b id="valBet">—</b><button class="step" id="betUp" aria-label="Raise bet">+</button></div></div>
+        <div class="w-cell mode"><small>RISK</small><div class="seg" id="modeSeg"></div></div>
       </div>
-      <div class="ctl-box mode"><span class="ctl-l">RISK</span><div class="seg" id="modeSeg"></div></div>
-      <button class="big-btn" id="btnMain"><span id="btnMainTop">START</span><small id="btnMainSub">PLACE BET</small></button>
+      <button class="gong" id="btnMain"><span id="btnMainTop">START</span><small id="btnMainSub">PLACE BET</small></button>
       <button class="cash-btn" id="btnCash" disabled><span>CASH OUT</span><small id="cashVal">—</small></button>
     </footer>
 

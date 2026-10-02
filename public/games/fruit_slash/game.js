@@ -102,20 +102,24 @@
     }
 
     layout() {
-      const wrap = document.querySelector('.stage-wrap');
-      const ladder = $('ladder');
+      const arena = document.querySelector('.arena');
       const stage = $('stage');
-      const vertical = getComputedStyle(wrap).flexDirection === 'column';
-      const r = wrap.getBoundingClientRect();
-      const lw = vertical ? 0 : ladder.getBoundingClientRect().width + 14;
-      const lh = vertical ? ladder.getBoundingClientRect().height + 10 : 0;
-      const aw = r.width - lw - 8;
-      const ah = r.height - lh - 8;
-      let w = vertical && innerWidth <= 640 ? aw : Math.min(aw, ah * 16 / 9);
+      const ladder = $('ladder');
+      const steps = $('steps');
+      const column = getComputedStyle(document.querySelector('.dojo')).flexDirection === 'column';
+      const r = arena.getBoundingClientRect();
+      let w;
+      if (column) {
+        w = r.width;
+      } else {
+        const ah = document.querySelector('.dojo').getBoundingClientRect().height - steps.getBoundingClientRect().height - 12;
+        w = Math.min(r.width, ah * 16 / 9);
+      }
       w = Math.max(240, Math.floor(w));
       stage.style.width = `${w}px`;
       stage.style.height = `${Math.round(w * 9 / 16)}px`;
-      if (!vertical) ladder.style.height = `${Math.round(w * 9 / 16)}px`;
+      ladder.style.height = column ? '' : `${Math.round(w * 9 / 16)}px`;
+      ladder.style.marginTop = column ? '' : `${steps.getBoundingClientRect().height + 10}px`;
     }
 
     bindUi() {
@@ -355,7 +359,15 @@
       const [n, b] = this.crash.modes[this.mode].waves[lvl - 1];
       $('nsLevel').textContent = `${r ? lvl : 0}/${this.crash.levels}`;
       $('nsWave').textContent = this.crash.wave_names[lvl - 1].toUpperCase();
-      $('nsObjects').innerHTML = `<span class="fr">${n}</span> FRUIT · <span class="bm">${b}</span> BOMB${b === 1 ? '' : 'S'} · ${this.crash.lanes - n - b} EMPTY`;
+      $('nsObjects').innerHTML = `<span class="chip f"><b>${n}</b>fruit</span><span class="chip bm"><b>${b}</b>bomb${b === 1 ? '' : 's'}</span><span class="chip e"><b>${this.crash.lanes - n - b}</b>empty</span>`;
+      $('hudCut').hidden = !r;
+      const step = !r ? 0 : this.busy ? 2 : sp ? 2 : 1;
+      document.querySelectorAll('#steps li').forEach((li) => {
+        const k = Number(li.dataset.step);
+        const cash = r && r.level >= 1 && !this.busy;
+        li.classList.toggle('on', k === step || (k === 3 && cash));
+        li.classList.toggle('done', !!r && k < step);
+      });
       $('nsCut').textContent = sp ? `${this.cut.to - this.cut.from + 1} LANE${this.cut.to > this.cut.from ? 'S' : ''}` : r ? 'SWIPE' : '—';
       if (sp) {
         $('nsChance').textContent = `${(sp.chance * 100).toFixed(1)}%`;
@@ -372,39 +384,56 @@
     renderSideBets() {
       const row = $('sbRow');
       const q = this.round ? this.span : null;
+      const ICONS = {
+        mega_combo: '<svg viewBox="0 0 24 24" fill="none" stroke="#ffd23f" stroke-width="2.4" stroke-linecap="round"><path d="M3 17L17 3M7 21L21 7M3 11L11 3"/></svg>',
+        clean_sheet: '<svg viewBox="0 0 24 24" fill="#7dff8a"><path d="M12 2l2.2 6.3L21 9l-5.2 4 1.8 7-5.6-3.9L6.4 20l1.8-7L3 9l6.8-.7z"/></svg>',
+        dragon_fruit: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="13" rx="7" ry="8" fill="#ff4fa3"/><path d="M12 3l2 4h-4zM5 9l4 1-2 3zM19 9l-4 1 2 3z" fill="#7dff8a"/></svg>',
+        insurance: '<svg viewBox="0 0 24 24"><circle cx="11" cy="14" r="7" fill="#22222a" stroke="#ff3b3b" stroke-width="1.5"/><path d="M15 8l3-3" stroke="#c8a070" stroke-width="2"/><circle cx="19" cy="4" r="1.6" fill="#ffd23f"/></svg>',
+        shield: '<svg viewBox="0 0 24 24" fill="rgba(122,215,255,.25)" stroke="#7ad7ff" stroke-width="2"><path d="M12 2l8 4.6v9.2L12 21l-8-5.2V6.6z"/></svg>'
+      };
+      const DESC = {
+        mega_combo: `Pays if ${this.crash.combo_min} or more fruits land in your cut and no bomb does. Needs a cut of at least ${this.crash.combo_min} lanes.`,
+        clean_sheet: 'Pays if every fruit of the wave lands in your cut and no bomb does. Wider cuts make it likelier.',
+        dragon_fruit: `A golden dragon fruit turns up in about 1 wave in ${Math.round(1 / this.crash.dragon_chance)}. Pays if it lands in your cut and no bomb does.`,
+        insurance: 'Pays if a bomb lands in your cut. Use it to hedge the main bet on a risky wave.',
+        shield: `From wave ${this.crash.helmet.from_level}, once per round. If a bomb lands in your cut, the shield takes the blast: your multiplier drops one step and you replay the wave. It does not save a cut with no fruit.`
+      };
       if (!row.children.length) {
-        for (const id of SIDE_ORDER) {
+        for (const id of [...SIDE_ORDER, 'shield']) {
           const b = document.createElement('button');
-          b.className = `sb sb-${id}`;
+          b.className = `sb${id === 'shield' ? ' shield' : ''}`;
           b.dataset.id = id;
-          b.title = SIDE_HINT[id];
-          b.innerHTML = `<span class="sb-n">${this.crash.side_bets[id].label}</span><span class="sb-o">—</span>`;
-          b.onclick = () => { this.sideSel[id] = !this.sideSel[id]; SFX.click(); this.render(); };
+          const name = id === 'shield' ? (this.crash.helmet.label || 'Shield') : this.crash.side_bets[id].label;
+          b.innerHTML = `<span class="ico">${ICONS[id]}</span><span class="sb-n">${name}</span><span class="sb-o">—</span><span class="sb-p"></span><span class="sb-d">${DESC[id]}</span><span class="tick"></span>`;
+          b.onclick = () => {
+            if (id === 'shield') this.shieldSel = !this.shieldSel; else this.sideSel[id] = !this.sideSel[id];
+            SFX.click();
+            this.render();
+          };
           row.appendChild(b);
         }
-        const h = document.createElement('button');
-        h.className = 'sb shield';
-        h.dataset.id = 'shield';
-        h.title = 'Samurai Shield: absorbs a bomb in your cut once per round; the multiplier goes one step back and you play the same wave again';
-        h.innerHTML = `<span class="sb-n">${this.crash.helmet.label || 'Shield'}</span><span class="sb-o">—</span>`;
-        h.onclick = () => { this.shieldSel = !this.shieldSel; SFX.click(); this.render(); };
-        row.appendChild(h);
       }
       $('sbStakeVal').textContent = this.money.fmt(this.sideStake);
+      const rtp = 0.965;
       for (const b of row.children) {
         const id = b.dataset.id;
         const o = b.querySelector('.sb-o');
+        const p = b.querySelector('.sb-p');
         if (id === 'shield') {
           const price = q && q.helmet_price;
           b.disabled = this.busy || !price;
           b.classList.toggle('on', !!(this.shieldSel && price));
-          o.textContent = price ? this.money.fmt(price) : this.round && this.round.saves ? 'USED' : this.round ? (q ? `FROM WAVE ${this.crash.helmet.from_level}` : 'SET CUT') : '1 PER ROUND';
+          o.textContent = price ? this.money.fmt(price) : '—';
+          p.textContent = price ? `costs ${this.money.fmt(price)} for this wave` : this.round && this.round.saves ? 'used this round' : this.round && q ? `from wave ${this.crash.helmet.from_level}` : this.round ? 'set your cut to see the price' : 'once per round';
           continue;
         }
         const odds = q ? q.side_bets[id] : null;
         b.disabled = this.busy || (!!q && !odds);
         b.classList.toggle('on', !!this.sideSel[id] && (!q || !!odds));
-        o.textContent = odds ? `x${odds.toFixed(2)}` : q ? '—' : this.round ? 'SET CUT' : 'ODDS ON START';
+        o.textContent = odds ? `x${odds.toFixed(2)}` : '—';
+        if (odds) p.textContent = `≈ 1 in ${Math.max(1, Math.round(odds / rtp))} with your cut`;
+        else if (q) p.textContent = id === 'mega_combo' ? `needs a cut of ${this.crash.combo_min}+ lanes` : id === 'clean_sheet' ? `needs a cut of ${this.next.fruits}+ lanes` : 'not possible with this cut';
+        else p.textContent = this.round ? 'set your cut to see the odds' : 'odds appear once you set a cut';
       }
     }
 
