@@ -64,11 +64,27 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; word-break:
 .icon-btn.off { color: var(--muted); text-decoration: line-through; }
 
 /* layout: side bets | arena | ladder, tray below */
-.dojo { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr) 118px; gap: 14px; align-items: stretch; }
+.dojo { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 118px; gap: 14px; align-items: stretch; }
+.arena-top { width: 100%; display: flex; align-items: center; gap: 12px; }
+.arena-top .steps { flex: 1; }
+.sb-toggle { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 14px 7px 8px; border-radius: 30px; text-align: left;
+  background: linear-gradient(180deg, #4a2812, #2b170b); border: 1px solid var(--gold-d); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); }
+.sb-toggle .sbt-ico { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #2a1600; font-size: 13px; }
+.sb-toggle b { display: block; font-family: var(--display); font-weight: 400; font-size: 14px; color: var(--gold); letter-spacing: 0.5px; }
+.sb-toggle small { display: block; font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.sb-toggle.active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(255, 207, 74, 0.25), 0 4px 14px rgba(0, 0, 0, 0.4); }
+.sb-toggle.active small { color: var(--text); }
+.sb-toggle.ping { animation: ping 0.6s ease-in-out 3; }
+@keyframes ping { 50% { box-shadow: 0 0 0 6px rgba(79, 209, 122, 0.45); } }
+.drawer-scrim { position: fixed; inset: 0; z-index: 29; background: rgba(8, 3, 1, 0.55); }
+.drawer-scrim[hidden] { display: none; }
+.tal-close { flex: none; }
 
 /* side bets: talisman cards */
-.talismans { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px;
-  background: linear-gradient(180deg, #2b170b, #1d0f07); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.08); }
+.talismans { position: fixed; z-index: 30; left: 0; top: 0; bottom: 0; width: min(400px, 94vw); transform: translateX(-104%); transition: transform 0.28s cubic-bezier(.2, .8, .2, 1);
+  overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 16px 14px calc(16px + env(safe-area-inset-bottom)); border-radius: 0 18px 18px 0;
+  background: linear-gradient(180deg, #2b170b, #1d0f07); border: 1px solid var(--line); box-shadow: 20px 0 50px rgba(0, 0, 0, 0.6); }
+.talismans.open { transform: none; }
 .tal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .tal-head h2 { font-family: var(--display); font-weight: 400; font-size: 18px; color: var(--gold); line-height: 1.1; }
 .tal-head p { font-size: 12px; color: var(--muted); margin-top: 3px; }
@@ -242,9 +258,8 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; word-break:
 
 /* responsive */
 @media (max-width: 1100px) {
-  .dojo { grid-template-columns: 240px minmax(0, 1fr) 100px; gap: 10px; }
-  .sb .sb-d { display: none; }
-  .tal-how { font-size: 12px; }
+  .dojo { grid-template-columns: minmax(0, 1fr) 100px; gap: 10px; }
+  .steps li em { display: none; }
 }
 @media (max-width: 860px), (max-height: 520px) and (orientation: landscape) {
   html, body { overflow: auto; }
@@ -254,9 +269,10 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; word-break:
   .ladder { order: 2; width: 100%; height: 30px; flex-direction: row; padding: 3px; gap: 2px; }
   .rung { flex-direction: column; justify-content: center; padding: 0; font-size: 9px; min-height: 0; }
   .rung .rn { display: none; }
-  .talismans { order: 3; overflow: visible; }
-  .tal-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
-  .sb .sb-d { display: block; }
+  .talismans { top: auto; left: 0; right: 0; width: auto; max-height: 82dvh; border-radius: 18px 18px 0 0; transform: translateY(104%); }
+  .talismans.open { transform: none; }
+  .arena-top { flex-wrap: wrap; gap: 8px; }
+  .sb-toggle { order: 2; width: 100%; justify-content: center; }
   .tray { position: sticky; bottom: 0; z-index: 5; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'wallet wallet' 'gong cash'; }
   .wallet { grid-area: wallet; }
   .gong { grid-area: gong; width: 100%; height: 58px; margin: 0; border-radius: 14px; flex-direction: column; font-size: 18px; box-shadow: 0 0 0 2px #b8860b, inset 0 -4px 0 rgba(0, 0, 0, 0.25); border-width: 0; }

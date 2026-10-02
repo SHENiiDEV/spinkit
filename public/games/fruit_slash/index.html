@@ -22,13 +22,15 @@
     </header>
 
     <main class="dojo">
-      <aside class="talismans" aria-label="Side bets">
+      <div class="drawer-scrim" id="sbScrim" hidden></div>
+      <aside class="talismans" id="talismans" aria-label="Side bets">
         <div class="tal-head">
           <div>
             <h2>Side bets</h2>
             <p>Extra wagers on the <b>next wave only</b></p>
           </div>
           <button class="sb-stake" id="sbStake" title="Stake per side bet">STAKE <b id="sbStakeVal">$0.20</b></button>
+          <button class="x tal-close" id="sbClose" aria-label="Close side bets">×</button>
         </div>
         <details class="tal-how" id="talHow">
           <summary>How side bets work</summary>
@@ -44,11 +46,14 @@
       </aside>
 
       <section class="arena">
+        <div class="arena-top">
+        <button class="sb-toggle" id="sbToggle" aria-controls="talismans"><span class="sbt-ico">◆</span><span class="sbt-txt"><b>SIDE BETS</b><small id="sbSummary">tap to add</small></span></button>
         <ol class="steps" id="steps">
           <li data-step="1"><i>1</i><span><b>Swipe your cut</b><em>across the lanes</em></span></li>
           <li data-step="2"><i>2</i><span><b>Throw</b><em>the wave flies into it</em></span></li>
           <li data-step="3"><i>3</i><span><b>Cash out</b><em>or go for the next wave</em></span></li>
         </ol>
+        </div>
         <div class="stage" id="stage">
           <canvas id="scene"></canvas>
           <div class="hud hud-tl"><span class="hud-k">WAVE <b id="nsLevel">—</b></span><span class="hud-v" id="nsWave">—</span></div>

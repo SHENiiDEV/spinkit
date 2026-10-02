@@ -105,7 +105,7 @@
       const arena = document.querySelector('.arena');
       const stage = $('stage');
       const ladder = $('ladder');
-      const steps = $('steps');
+      const steps = document.querySelector('.arena-top');
       const column = getComputedStyle(document.querySelector('.dojo')).flexDirection === 'column';
       const r = arena.getBoundingClientRect();
       let w;
@@ -149,6 +149,11 @@
       };
       document.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => { b.closest('.modal').hidden = true; }; });
       document.querySelectorAll('.modal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) m.hidden = true; }));
+      const drawer = (open) => { $('talismans').classList.toggle('open', open); $('sbScrim').hidden = !open; if (open) $('sbToggle').classList.remove('ping'); };
+      $('sbToggle').onclick = () => drawer(!$('talismans').classList.contains('open'));
+      $('sbClose').onclick = () => drawer(false);
+      $('sbScrim').onclick = () => drawer(false);
+      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') drawer(false); });
       $('pfRotate').onclick = () => this.rotateSeed();
       $('vGo').onclick = () => this.verifyForm();
       window.addEventListener('keydown', (e) => {
@@ -243,6 +248,7 @@
       await this.scene.playLanes({ lanes: shot.lanes, dragon: shot.dragon, cut, steps, saved: shot.saved, outcome: shot.outcome, index: q.level - 1 });
       this.apply(d);
       this.showSideResults(shot, q);
+      if (shot.side_bets.length && !$('talismans').classList.contains('open')) $('sbToggle').classList.add('ping');
       if (shot.side_win > 0) {
         this.flashSide(shot.side_bets.filter((x) => x.won).map((x) => x.id));
         this.toast(`SIDE BETS +${this.money.fmt(shot.side_win)} → added to your credit`);
@@ -436,6 +442,10 @@
         }
       }
       $('sbStakeVal').textContent = this.money.fmt(this.sideStake);
+      const on = SIDE_ORDER.filter((id) => this.sideSel[id]).length + (this.shieldSel ? 1 : 0);
+      const cost = this.waveCost();
+      $('sbToggle').classList.toggle('active', on > 0);
+      $('sbSummary').textContent = on ? `${on} on${cost ? ` · ${this.money.fmt(cost)} this wave` : ''}` : 'tap to add · optional';
       const rtp = 0.965;
       for (const b of row.children) {
         const id = b.dataset.id;
