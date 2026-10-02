@@ -242,9 +242,10 @@
       const steps = shot.outcome === 'cut' ? sp.multipliers.slice(0, shot.fruits_cut) : [];
       await this.scene.playLanes({ lanes: shot.lanes, dragon: shot.dragon, cut, steps, saved: shot.saved, outcome: shot.outcome, index: q.level - 1 });
       this.apply(d);
+      this.showSideResults(shot, q);
       if (shot.side_win > 0) {
         this.flashSide(shot.side_bets.filter((x) => x.won).map((x) => x.id));
-        this.toast(`SIDE BET WIN ${this.money.fmt(shot.side_win)}`);
+        this.toast(`SIDE BETS +${this.money.fmt(shot.side_win)} → added to your credit`);
         SFX.coin();
       }
       if (shot.saved) {
@@ -381,6 +382,27 @@
       this.renderLadder();
     }
 
+    /** After a wave: what each side bet did and why, in plain words. */
+    showSideResults(shot, q) {
+      const el = $('sbLast');
+      if (!shot.side_bets.length) { el.hidden = true; return; }
+      const cut = shot.lanes.slice(shot.cut.from, shot.cut.to + 1);
+      const bomb = cut.includes('B');
+      const outside = [...shot.lanes].map((x, i) => (x === 'F' && (i < shot.cut.from || i > shot.cut.to) ? i + 1 : 0)).filter(Boolean);
+      const why = (id, won) => {
+        if (id === 'insurance') return won ? 'a bomb was in your cut' : 'no bomb in your cut';
+        if (bomb) return 'a bomb was in your cut';
+        if (id === 'mega_combo') return won ? `${shot.fruits_cut} fruits in one cut` : `${shot.fruits_cut} fruit in the cut, needs ${this.crash.combo_min}`;
+        if (id === 'clean_sheet') return won ? `all ${q.fruits} fruits were in your cut` : `${outside.length} fruit outside your cut (lane ${outside.join(', ')})`;
+        if (id === 'dragon_fruit') return won ? 'the dragon fruit was in your cut' : shot.dragon < 0 ? 'no dragon fruit in this wave' : `it landed in lane ${shot.dragon + 1}, outside your cut`;
+        return '';
+      };
+      const fmt = (v) => this.money.fmt(v);
+      el.innerHTML = `<h3>SIDE BETS · WAVE ${shot.level}</h3>` + shot.side_bets.map((b) => `<div class="r ${b.won ? 'win' : 'lose'}"><b>${this.crash.side_bets[b.id].label} ×${b.odds.toFixed(2)}</b><span class="amt">${b.won ? `+${fmt(b.win)}` : `−${fmt(b.stake)}`}</span><span class="why">${why(b.id, b.won)}</span></div>`).join('') +
+        `<div class="note">Side bet wins go straight to your credit. They do not change the multiplier of your main bet.</div>`;
+      el.hidden = false;
+    }
+
     renderSideBets() {
       const row = $('sbRow');
       const q = this.round ? this.span : null;
@@ -431,7 +453,7 @@
         b.disabled = this.busy || (!!q && !odds);
         b.classList.toggle('on', !!this.sideSel[id] && (!q || !!odds));
         o.textContent = odds ? `x${odds.toFixed(2)}` : '—';
-        if (odds) p.textContent = `≈ 1 in ${Math.max(1, Math.round(odds / rtp))} with your cut`;
+        if (odds) p.textContent = `pays ${this.money.fmt(Math.floor(this.sideStake * odds))} · ≈ 1 in ${Math.max(1, Math.round(odds / rtp))}`;
         else if (q) p.textContent = id === 'mega_combo' ? `needs a cut of ${this.crash.combo_min}+ lanes` : id === 'clean_sheet' ? `needs a cut of ${this.next.fruits}+ lanes` : 'not possible with this cut';
         else p.textContent = this.round ? 'set your cut to see the odds' : 'odds appear once you set a cut';
       }
