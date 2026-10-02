@@ -11,6 +11,7 @@ const { openapi } = require('./http/openapi');
 const { clientIp } = require('./services/security');
 const { ApiError } = require('./services/errors');
 const admin = require('./services/admin');
+const { GAMES_CATALOG } = require('./games/catalog');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '../public');
@@ -45,6 +46,7 @@ router.get('/api/v1/user/balance', (ctx) => HubController.handleGetBalance(ctx.q
 router.get('/api/v1/transactions', (ctx) => HubController.handleGetTransactions(ctx.query.user_id, ctx.query.limit ? Number(ctx.query.limit) : 30));
 router.post('/api/v1/rgs/init', (ctx) => RgsController.handleInit(ctx.body));
 router.post('/api/v1/rgs/spin', (ctx) => RgsController.handleSpin(ctx.body));
+router.post('/api/v1/rgs/action', (ctx) => RgsController.handleAction(ctx.body));
 router.post('/api/v1/rgs/refill', (ctx) => RgsController.handleRefill(ctx.body));
 
 merchantApi.register(router);
@@ -180,6 +182,9 @@ const server = http.createServer(async (req, res) => {
 
   // Game client: every game shares one client, the theme comes from /rgs/init
   if (/^\/games\/[a-zA-Z0-9_-]+\/?$/.test(pathname)) {
+    // SpinKit Exclusive games ship their own client (game.client), slots share one
+    const g = GAMES_CATALOG[pathname.split('/')[2]];
+    if (g && g.client) return serveStatic(res, path.join(PUBLIC_DIR, 'games', g.client, 'index.html'));
     return serveStatic(res, path.join(PUBLIC_DIR, 'games/common/slot.html'));
   }
   if (pathname === '/admin' || pathname === '/admin/') {

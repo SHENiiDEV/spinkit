@@ -163,3 +163,39 @@ node scripts/simulate.js --game <id> --rounds 1000000
 ```
 
 Golden master снимает хэши готовых описаний игр, клиентского конфига, ответа Merchant API и 150+ спинов (включая купленные фриспины) на фиксированном сиде: любой рефакторинг, который случайно меняет математику или контракт API, сразу виден.
+
+## SpinKit Exclusive (не слоты)
+
+Категория лобби `exclusive` — собственные игры с раундом из нескольких запросов. Первая — **Apple Shooter** (ретро step crash).
+
+```
+src/games/exclusive/              описания игр (kind: 'exclusive', своя mechanic и свой client)
+  apple_shooter.js                уровни, шансы Medium/High, ветер, сайд-беты, шлем, Revenge, скины
+src/engine/exclusive/step-crash.js  математика + Provably Fair (чистые функции)
+src/engine/mechanics/step_crash.js  регистрация в реестре механик (stateful: true)
+src/services/exclusive-service.js   раунд, кошелёк, запись раунда в rgs_transactions
+public/games/apple_shooter/       свой клиент: index.html, style.css, scene.js (canvas 400×225), game.js, sfx.js
+scripts/simulate-exclusive.js     точный расчёт RTP (+ --mc N: Monte-Carlo на настоящем HMAC)
+test/exclusive.test.js            математика, PF, денежный поток, проверка раундов раскрытым сидом
+```
+
+**API клиента** (токен сессии, как у слотов; `/rgs/spin` для таких игр отвечает `USE_ACTION_ENDPOINT`):
+
+| запрос | что делает |
+|---|---|
+| `POST /api/v1/rgs/init { token }` | конфиг (`game_config.crash`), незавершённый раунд, `next` — котировка следующего выстрела, PF-хэш, скины, Revenge |
+| `POST /api/v1/rgs/action { token, action: 'start', bet, mode }` | списывает ставку, открывает раунд (`mode`: `medium` / `high`) |
+| `… action: 'shoot', side_bets: { bullseye: 20, … }, helmet, expect_shot }` | один выстрел; сайд-беты и шлем — только на этот выстрел; `expect_shot` защищает от двойного клика |
+| `… action: 'cashout'` | выплата `bet × multiplier` (после ≥ 1 пройденного уровня) |
+| `… action: 'seed', client_seed` | между раундами: раскрывает старый server seed, выдаёт новый |
+| `… action: 'skin', skin` | выбрать открытый скин (каждые 100 пройденных выстрелов) |
+
+**Математика.** Выстрел = `HMAC_SHA256(server_seed, client_seed:nonce:shot)`: байты 0-3 → `u`, байты 4-5 → ветер ±10 м/с.
+`chance = survival[mode][level] / (1 + бонус ветра)`, `u ≥ chance` → летальный, иначе `u/chance` делится на bullseye / hat_trick / near_miss / hit.
+Множитель = `rtp / chance₁ / … / chanceₖ`: край казино только в первом выстреле, все следующие EV-нейтральны, поэтому RTP основной ставки = 96.5% при любой стратегии кэшаута (с округлением множителя до 0.01: 96.4–96.7% на 1–3 выстрелах, дальше 96.50%). Сайд-беты: `odds = floor(0.965 / P(событие))`. Шлем: цена = `P(летальный) × 0.5 × множитель × ставка / 0.965`. RTP-профили оператора (88/94/…) масштабируют целевой RTP.
+
+**Revenge** — подарок поверх RTP. В GDD x1.30 вместо x1.06 (буст лестницы ×1.226) дал бы игроку, который всегда идёт до 10-го уровня, ~99.7%; по умолчанию стоит x1.10 (×1.0377, худший случай +0.55 п.п.). Меняется одной строкой `revenge.boost` в `apple_shooter.js`, проверка — `npm run simulate:exclusive`.
+
+**Прицел косметический**: угол и натяжение только рисуют полёт, сервер логирует их в `details.shots[].aim`, но не использует. Об этом сказано в правилах игры.
+
+Каждый раунд — одна строка `rgs_transactions` (`bet_type = 'step_crash'`): `bet_amount` = ставка + сайд-беты + шлемы, `details.shots` — все выстрелы с хэшами, шансами, ветром и ставками; по раскрытому сиду раунд проверяется целиком.

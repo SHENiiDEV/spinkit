@@ -6,6 +6,7 @@ const { RgsEngine } = require('../engine/rgs');
 const merchants = require('./merchants');
 const players = require('./players');
 const jackpots = require('./jackpots');
+const exclusive = require('./exclusive-service');
 const { currencyInfo } = require('./currency');
 const { ApiError, bad, notFound } = require('./errors');
 const { REFILL_AMOUNT } = require('../config');
@@ -143,6 +144,7 @@ function loadSession(token) {
 // ------------------------------------------------------------------ init
 function init(token) {
   const { session, merchant, player } = loadSession(token);
+  if (exclusive.isExclusive(GAMES_CATALOG[session.game_id])) return exclusive.init(token);
   const eff = merchants.effective(merchant, session.game_id, undefined, session);
   const gameState = dbService.getGameState(player.id, session.game_id);
   const bonus = parseBonus(gameState.active_bonus_data);
@@ -177,6 +179,7 @@ function spin(token, betAmount, buyFeature = false) {
   const { session, merchant, player } = loadSession(token);
   const eff = merchants.effective(merchant, session.game_id, undefined, session);
   const game = withCap(eff.game, eff.max_win_x);
+  if (exclusive.isExclusive(game)) throw bad('USE_ACTION_ENDPOINT', 'This SpinKit Exclusive game is played with POST /api/v1/rgs/action');
 
   return dbService.tx(() => {
     const user = players.byId(player.id);
@@ -302,4 +305,9 @@ function refill(token) {
   return { status: 'success', balance: u.balance, added: REFILL_AMOUNT };
 }
 
-module.exports = { publicGameConfig, launch, init, spin, refill, loadSession };
+/** SpinKit Exclusive round actions (start / shoot / cashout / seed / skin). */
+function action(token, body) {
+  return exclusive.action(token, body);
+}
+
+module.exports = { publicGameConfig, launch, init, spin, refill, loadSession, action };

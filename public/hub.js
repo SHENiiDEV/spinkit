@@ -24,8 +24,8 @@ function fmt(minor) {
   return moneyFmt.format(Number(minor) / Math.pow(10, currency.decimals));
 }
 
-const CATEGORY_LABELS = { egypt: 'Ancient Egypt', classic: 'Classic', scifi: 'Sci-Fi', mythology: 'Mythology', candy: 'Candy', asian: 'Asian', animals: 'Animals', aztec: 'Aztec', norse: 'Norse', pirates: 'Pirates', western: 'Wild West', fantasy: 'Fantasy', ocean: 'Ocean', winter: 'Winter', jungle: 'Jungle', space: 'Space', horror: 'Horror', lucky: 'Lucky', ancient: 'Ancient Rome', adventure: 'Adventure', fun: 'Fun & Party', fruits: 'Fruits', sweets: 'Sweets', nature: 'Nature', holiday: 'Holidays', gems: 'Gems', arabian: 'Arabian Nights', sport: 'Sport', music: 'Music', tropical: 'Tropical', crime: 'Crime' };
-const MECHANIC_LABEL = (g) => g.mechanic === 'matchlines' ? `${g.reels_count}×${g.rows_count} LINE CASCADES` : g.mechanic === 'holdwin' ? `${g.paylines_count} LINES · HOLD & WIN` : g.mechanic === 'lines' ? `${g.paylines_count} LINES` : (g.mechanic === 'ways' || g.mechanic === 'giants') ? `${Number(g.ways_count).toLocaleString()} WAYS` : g.mechanic === 'clusters' ? 'CLUSTER PAYS' : g.mechanic === 'megaways' ? `${Number(g.ways_count).toLocaleString()} MEGAWAYS` : 'PAY ANYWHERE';
+const CATEGORY_LABELS = { exclusive: '★ SpinKit Exclusive', egypt: 'Ancient Egypt', classic: 'Classic', scifi: 'Sci-Fi', mythology: 'Mythology', candy: 'Candy', asian: 'Asian', animals: 'Animals', aztec: 'Aztec', norse: 'Norse', pirates: 'Pirates', western: 'Wild West', fantasy: 'Fantasy', ocean: 'Ocean', winter: 'Winter', jungle: 'Jungle', space: 'Space', horror: 'Horror', lucky: 'Lucky', ancient: 'Ancient Rome', adventure: 'Adventure', fun: 'Fun & Party', fruits: 'Fruits', sweets: 'Sweets', nature: 'Nature', holiday: 'Holidays', gems: 'Gems', arabian: 'Arabian Nights', sport: 'Sport', music: 'Music', tropical: 'Tropical', crime: 'Crime' };
+const MECHANIC_LABEL = (g) => g.mechanic === 'step_crash' ? 'STEP CRASH · PROVABLY FAIR' : g.mechanic === 'matchlines' ? `${g.reels_count}×${g.rows_count} LINE CASCADES` : g.mechanic === 'holdwin' ? `${g.paylines_count} LINES · HOLD & WIN` : g.mechanic === 'lines' ? `${g.paylines_count} LINES` : (g.mechanic === 'ways' || g.mechanic === 'giants') ? `${Number(g.ways_count).toLocaleString()} WAYS` : g.mechanic === 'clusters' ? 'CLUSTER PAYS' : g.mechanic === 'megaways' ? `${Number(g.ways_count).toLocaleString()} MEGAWAYS` : 'PAY ANYWHERE';
 const NEW_GAMES = ['enchanted_knight', 'jade_dragon', 'wild_safari'];
 
 // DOM Elements
@@ -163,7 +163,9 @@ async function fetchGames() {
     const res = await fetch('/api/v1/games');
     const data = await res.json();
     // games with painted artwork first
-    allGames = (data.games || []).slice().sort((a, b) => (a.collection === 'artwork' ? 0 : 1) - (b.collection === 'artwork' ? 0 : 1));
+    // SpinKit Exclusive first, then games with painted artwork
+    const rank = (g) => (g.category === 'exclusive' ? 0 : g.collection === 'artwork' ? 1 : 2);
+    allGames = (data.games || []).slice().sort((a, b) => rank(a) - rank(b));
     if (data.currency) { currency = data.currency; moneyFmt = null; }
     const el = document.getElementById('statGames');
     if (el) el.textContent = allGames.length;
@@ -181,6 +183,7 @@ function renderFilters() {
   if (!filterChipsWrap) return;
   const chips = [
     ['all', `All (${allGames.length})`],
+    ['exclusive', `★ SpinKit Exclusive (${allGames.filter((g) => g.category === 'exclusive').length})`],
     ['artwork', `With artwork (${allGames.filter((g) => g.collection === 'artwork').length})`],
     ['lines', 'Paylines'],
     ['ways', 'Ways'],
@@ -224,6 +227,7 @@ function matchesFilter(g) {
   if ((m === 'ways' || m === 'tumble' || m === 'giants' || m === 'clusters' || m === 'megaways' || m === 'holdwin' || m === 'matchlines') && g.mechanic !== m) return false;
   if (m === 'buy' && !g.has_feature_buy) return false;
   if (m === 'artwork' && g.collection !== 'artwork') return false;
+  if (m === 'exclusive' && g.category !== 'exclusive') return false;
   if (m === 'new' && !g.skin_of && !NEW_GAMES.includes(g.id)) return false;
   if (lobbyState.cat && g.category !== lobbyState.cat) return false;
   if (lobbyState.q && !(`${g.name} ${g.category} ${g.tagline}`.toLowerCase().includes(lobbyState.q))) return false;
@@ -265,6 +269,7 @@ function renderGames() {
         <div class="tile-logo">${logoHtml}</div>
         <div class="tile-badges">
           ${NEW_GAMES.includes(game.id) || game.mechanic === 'giants' ? '<span class="badge new">NEW</span>' : ''}
+          ${game.category === 'exclusive' ? '<span class="badge exclusive">EXCLUSIVE</span>' : ''}
           ${game.has_feature_buy ? '<span class="badge buy">BUY</span>' : ''}
         </div>
         <div class="tile-play"><span>▶ PLAY</span></div>

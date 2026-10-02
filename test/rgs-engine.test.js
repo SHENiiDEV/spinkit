@@ -9,6 +9,7 @@ console.log('Testing RGS Engine...');
 
 // ------------------------------------------------------------------ 1. every game spins
 for (const game of Object.values(GAMES_CATALOG)) {
+  if (game.kind === 'exclusive') continue; // stateful round games: test/exclusive.test.js
   const rng = seededRng(42);
   for (let i = 0; i < 300; i++) {
     const r = RgsEngine.calculateSpin({ game, betAmount: game.default_bet, rng });

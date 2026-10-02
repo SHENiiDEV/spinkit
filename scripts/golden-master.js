@@ -67,6 +67,7 @@ function merchantDetails(id) {
 
 const snapshot = {};
 for (const game of Object.values(GAMES_CATALOG)) {
+  if (game.kind === 'exclusive') continue; // SpinKit Exclusive: covered by test/exclusive.test.js
   snapshot[game.id] = {
     definition: hash(game),
     public_config: hash(publicGameConfig(game)),
