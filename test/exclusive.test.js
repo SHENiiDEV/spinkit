@@ -68,11 +68,10 @@ console.log('✔ Test 2: HMAC-SHA256 shot hash, outcome float and wind');
   assert.strictEqual(sc.outcomeOf(cfg, c, 0.8), 'lethal');
   assert.strictEqual(sc.outcomeOf(cfg, c, 0.7999), 'hit');
   assert.strictEqual(sc.ladder(game, 'medium')[0], 1.06, 'Medium starts at x1.06 (GDD)');
-  // wind defiance only in strong wind
-  assert.strictEqual(sc.sideOdds(cfg, 0.8, 3).wind_defiance, null);
-  assert(sc.sideOdds(cfg, 0.8, -6.5).wind_defiance > 1);
+  // Apple Shooter has no side bets: the helmet is the only extra
+  assert.deepStrictEqual(sc.sideOdds(cfg, 0.8, 3), {});
 }
-console.log('✔ Test 3: chances, step multipliers, side-bet odds');
+console.log('✔ Test 3: chances, step multipliers, no side bets');
 
 // ------------------------------------------------------------------ 4. Monte-Carlo main line ≈ 96.5% for different strategies
 {

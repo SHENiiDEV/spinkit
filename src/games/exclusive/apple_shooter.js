@@ -12,13 +12,12 @@
 // line returns exactly `rtp` whatever the player's cash-out strategy. Wind raises the step
 // (+5 / +15 / +35 %) and lowers the chance by the same factor — it changes volatility, not RTP.
 //
-// Side bets are separate wagers on the next shot only, odds = side_rtp / P(event).
 // The helmet is a per-shot buy priced at P(lethal) x (keep x current multiplier x bet) / helmet_rtp.
 
 module.exports = {
   id: 'apple_shooter',
   name: 'Apple Shooter',
-  tagline: 'Retro step crash · 10 shots · Wind · Side bets · Provably Fair',
+  tagline: 'Retro step crash · 10 shots · Wind · Steel Helmet · Provably Fair',
   category: 'exclusive',
   kind: 'exclusive', // stateful round game: played through POST /api/v1/rgs/action, not /rgs/spin
   client: 'apple_shooter', // public/games/apple_shooter/index.html
@@ -48,13 +47,8 @@ module.exports = {
     ],
     // how a survived shot looks (shares of the survival chance, in hash order)
     outcomes: { bullseye: 0.07, hat_trick: 0.24, near_miss: 0.32, hit: 0.37 },
-    side_bets: {
-      bullseye: { label: 'Bullseye', rtp: 0.965, wins_on: ['bullseye'] },
-      hat_trick: { label: 'Hat Trick', rtp: 0.965, wins_on: ['hat_trick'] },
-      near_miss: { label: 'Near-Miss', rtp: 0.965, wins_on: ['near_miss'] },
-      wind_defiance: { label: 'Wind Defiance', rtp: 0.965, wins_on: ['bullseye', 'hit'], min_wind: 6.0 },
-      insurance: { label: 'Lethal Insurance', rtp: 0.965, wins_on: ['lethal'] }
-    },
+    // no side bets: the only extra is the Steel Helmet (per-shot save)
+    side_bets: {},
     helmet: { from_level: 2, keep: 0.5, rtp: 0.965 },
     // after a lethal shot on level 7+ the next round (within 60 s, bet <= that round's bet)
     // starts with a boosted first step: x1.10 instead of x1.06 on Medium (whole ladder x1.0377).

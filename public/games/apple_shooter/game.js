@@ -8,14 +8,6 @@
   const params = new URLSearchParams(location.search);
   const TOKEN = params.get('token');
   const SFX = window.SFX;
-  const SIDE_ORDER = ['bullseye', 'hat_trick', 'near_miss', 'wind_defiance', 'insurance'];
-  const SIDE_HINT = {
-    bullseye: 'Dead centre of the apple',
-    hat_trick: 'Arrow knocks the hat off',
-    near_miss: 'Arrow parts the hair',
-    wind_defiance: 'Apple hit in wind ≥ 6 m/s',
-    insurance: 'Pays if the shot is lethal'
-  };
   const OUTCOME_TEXT = {
     bullseye: ['BULLSEYE!', 'good'],
     hit: ['HIT!', 'good'],
@@ -57,7 +49,6 @@
   class Game {
     constructor() {
       this.busy = false;
-      this.sideSel = {};
       this.helmetSel = false;
       this.history = [];
       this.reached = {};
@@ -79,7 +70,6 @@
       this.steps = this.cfg.bet_steps;
       this.betIndex = Math.max(0, this.steps.indexOf(this.cfg.default_bet));
       this.mode = this.crash.default_mode;
-      this.sideStake = this.steps[0];
       this.scene = new window.AppleScene.Scene($('scene'));
       this.scene.onRelease = (aim) => this.shoot(aim);
       this.apply(d);
@@ -129,20 +119,23 @@
 
     // -------------------------------------------------------------- layout
     layout() {
-      const wrap = document.querySelector('.stage-wrap');
+      const wrap = document.querySelector('.arcade');
       const ladder = $('ladder');
       const stage = $('stage');
+      const board = $('nextStrip');
       const vertical = getComputedStyle(wrap).flexDirection === 'column';
       const r = wrap.getBoundingClientRect();
-      const lw = vertical ? 0 : ladder.getBoundingClientRect().width + 14;
+      const lw = vertical ? 0 : ladder.getBoundingClientRect().width + 16;
+      const bh = board.getBoundingClientRect().height + 12;
       const lh = vertical ? ladder.getBoundingClientRect().height + 10 : 0;
       const aw = r.width - lw - 16;
-      const ah = r.height - lh - 16;
+      const ah = r.height - bh - lh - 12;
       let w = vertical && innerWidth <= 640 ? aw : Math.min(aw, ah * 16 / 9);
       w = Math.max(240, Math.floor(w));
       stage.style.width = `${w}px`;
       stage.style.height = `${Math.round(w * 9 / 16)}px`;
-      if (!vertical) ladder.style.height = `${Math.round(w * 9 / 16)}px`;
+      board.style.width = vertical && innerWidth <= 640 ? '' : `${w}px`;
+      if (!vertical) ladder.style.height = `${Math.round(w * 9 / 16) + bh}px`;
     }
 
     // -------------------------------------------------------------- ui bindings
@@ -165,13 +158,7 @@
         if (url) { try { window.top.location.href = url; } catch { location.href = url; } } else if (window.parent !== window) window.parent.postMessage({ type: 'spinkit:close' }, '*');
         else location.href = '/';
       };
-      $('sbStake').onclick = () => {
-        const opts = this.steps.filter((s) => s <= this.bet);
-        const i = opts.indexOf(this.sideStake);
-        this.sideStake = opts[(i + 1) % opts.length] || opts[0];
-        SFX.click();
-        this.render();
-      };
+      $('btnHelmet').onclick = () => { this.helmetSel = !this.helmetSel; SFX.click(); this.scene.setHelmet(this.helmetSel && this.next && this.next.helmet_price); this.render(); };
       document.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => b.closest('.modal').hidden = true; });
       document.querySelectorAll('.modal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) m.hidden = true; }));
       $('pfRotate').onclick = () => this.rotateSeed();
@@ -188,7 +175,6 @@
     setBet(i) {
       if (this.round || this.busy) return;
       this.betIndex = Math.max(0, Math.min(this.steps.length - 1, i));
-      if (this.sideStake > this.bet) this.sideStake = this.steps.filter((s) => s <= this.bet).pop();
       SFX.click();
       this.render();
     }
@@ -232,23 +218,14 @@
       await this.shoot(aim);
     }
 
-    sideBetsForShot() {
-      const out = {};
-      if (!this.next) return out;
-      for (const id of SIDE_ORDER) if (this.sideSel[id] && this.next.side_bets[id]) out[id] = this.sideStake;
-      return out;
-    }
-
     shotCost() {
-      const sides = Object.values(this.sideBetsForShot()).reduce((a, b) => a + b, 0);
-      const helmet = this.helmetSel && this.next && this.next.helmet_price ? this.next.helmet_price : 0;
-      return sides + helmet;
+      return this.helmetSel && this.next && this.next.helmet_price ? this.next.helmet_price : 0;
     }
 
     async shoot(aim) {
       if (this.busy || !this.round || !this.next) return;
       const cost = this.shotCost();
-      if (cost > this.balance) { this.scene.aim.pull = 0; return this.toast('Not enough credit for the side bets', true); }
+      if (cost > this.balance) { this.scene.aim.pull = 0; return this.toast('Not enough credit for the helmet', true); }
       this.busy = true;
       this.render();
       const q = this.next;
@@ -257,7 +234,7 @@
       const { n } = this.scene.release();
       let d;
       try {
-        d = await api('action', { action: 'shoot', side_bets: this.sideBetsForShot(), helmet, expect_shot: q.shot_index, aim: { angle: aim.angle, power: aim.power } });
+        d = await api('action', { action: 'shoot', helmet, expect_shot: q.shot_index, aim: { angle: aim.angle, power: aim.power } });
       } catch (e) {
         this.scene.nocked = true;
         this.busy = false;
@@ -271,11 +248,6 @@
       const shot = d.shot;
       await this.scene.shoot({ outcome: shot.outcome, saved: shot.saved, from: n, power: aim.power });
       this.apply(d);
-      if (shot.side_win > 0) {
-        this.flashSide(shot.side_bets.filter((s) => s.won).map((s) => s.id));
-        this.toast(`SIDE BET WIN ${this.money.fmt(shot.side_win)}`);
-        SFX.coin();
-      }
       if (shot.saved) {
         this.pop(OUTCOME_TEXT.saved[0], `MULTIPLIER HALVED · x${this.round.multiplier.toFixed(2)}`, 'good');
         this.helmetSel = false;
@@ -408,48 +380,22 @@
         $('nsNext').textContent = `UP TO x${lad[lad.length - 1]}+`;
       }
 
-      this.renderSideBets();
+      this.renderHelmet();
       this.renderLadder();
       this.renderRevenge();
     }
 
-    renderSideBets() {
-      const row = $('sbRow');
+    renderHelmet() {
+      const b = $('btnHelmet');
       const q = this.round ? this.next : null;
-      if (!row.children.length) {
-        for (const id of SIDE_ORDER) {
-          const b = document.createElement('button');
-          b.className = 'sb';
-          b.dataset.id = id;
-          b.title = SIDE_HINT[id];
-          b.innerHTML = `<span class="sb-c"></span><span class="sb-n">${this.crash.side_bets[id].label.toUpperCase()}</span><span class="sb-o">—</span>`;
-          b.onclick = () => { this.sideSel[id] = !this.sideSel[id]; SFX.click(); this.render(); };
-          row.appendChild(b);
-        }
-        const h = document.createElement('button');
-        h.className = 'sb helmet';
-        h.dataset.id = 'helmet';
-        h.title = `Steel helmet: a lethal shot bounces off, you keep ${Math.round(this.crash.helmet.keep * 100)}% of the multiplier and shoot again`;
-        h.innerHTML = '<span class="sb-c"></span><span class="sb-n">STEEL HELMET</span><span class="sb-o">—</span>';
-        h.onclick = () => { this.helmetSel = !this.helmetSel; SFX.click(); this.scene.setHelmet(this.helmetSel && this.next && this.next.helmet_price); this.render(); };
-        row.appendChild(h);
-      }
-      $('sbStakeVal').textContent = this.money.fmt(this.sideStake);
-      for (const b of row.children) {
-        const id = b.dataset.id;
-        const o = b.querySelector('.sb-o');
-        if (id === 'helmet') {
-          const price = q && q.helmet_price;
-          b.disabled = this.busy || !price;
-          b.classList.toggle('on', !!(this.helmetSel && price));
-          o.textContent = price ? this.money.fmt(price) : (q ? `FROM LV ${this.crash.helmet.from_level}` : '—');
-          continue;
-        }
-        const odds = q ? q.side_bets[id] : null;
-        b.disabled = this.busy || (q && !odds);
-        b.classList.toggle('on', !!this.sideSel[id] && (!q || !!odds));
-        o.textContent = odds ? `x${odds.toFixed(2)}` : (q ? (id === 'wind_defiance' ? 'WIND < 6' : '—') : 'ODDS ON START');
-      }
+      const price = q && q.helmet_price;
+      const keep = Math.round(this.crash.helmet.keep * 100);
+      b.disabled = this.busy || !price;
+      b.classList.toggle('on', !!(this.helmetSel && price));
+      b.title = `Steel Helmet: if the next shot is lethal, the arrow bounces off. You keep ${keep}% of your multiplier and shoot the same level again.`;
+      $('helmetInfo').textContent = price
+        ? (this.helmetSel ? `ON · ${this.money.fmt(price)} · saves ${keep}% if lethal` : `${this.money.fmt(price)} · keep ${keep}% if the shot is lethal`)
+        : this.round ? `available from level ${this.crash.helmet.from_level}` : `one-shot insurance from level ${this.crash.helmet.from_level}`;
     }
 
     renderLadder() {
@@ -495,9 +441,6 @@
       $('revengeText').textContent = `LADDER x${this.revenge.boost.toFixed(2)} · BET ≤ ${this.money.fmt(this.revenge.bet_max)} · ${left}s`;
     }
 
-    flashSide(ids) {
-      for (const b of $('sbRow').children) if (ids.includes(b.dataset.id)) { b.classList.remove('won'); void b.offsetWidth; b.classList.add('won'); }
-    }
 
     pop(main, sub, cls) {
       const el = $('resultPop');
@@ -530,7 +473,6 @@
       const pct = (v) => `${(v * 100).toFixed(2)}%`;
       const ladders = Object.entries(c.modes).map(([id, m]) => `<tr><td>${m.label}</td>${m.ladder.map((x, i) => `<td class="n" title="${(m.survival[i] * 100).toFixed(0)}% calm">x${x}</td>`).join('')}</tr>`).join('');
       const winds = c.wind.map((t, i) => `<tr><td>${t.label}</td><td>${i ? `${c.wind[i - 1].max.toFixed(1)}–${t.max ? t.max.toFixed(1) : '10'}` : `0–${t.max.toFixed(1)}`} m/s</td><td class="n">+${Math.round(t.bonus * 100)}%</td><td>chance ÷ ${(1 + t.bonus).toFixed(2)}</td></tr>`).join('');
-      const sides = SIDE_ORDER.map((id) => `<tr><td>${c.side_bets[id].label}</td><td>${SIDE_HINT[id]}</td><td class="n">${pct(c.side_bets[id].rtp)}</td></tr>`).join('');
       $('rulesBody').innerHTML = `
         <p>Apple Shooter is a <b>step crash</b> game. Place a bet, then shoot arrows at the apple on your partner's head.
           Every cleared shot moves him further away and raises the multiplier. <b>Cash out</b> after any cleared shot —
@@ -541,9 +483,6 @@
         <h3>WIND</h3>
         <p>The wind of every shot is part of its fair hash and is shown before you shoot. Stronger wind makes the shot harder and raises the step by the same factor, so the return does not change.</p>
         <table class="tbl"><tr><th>Weather</th><th>Speed</th><th>Step</th><th></th></tr>${winds}</table>
-        <h3>SIDE BETS (NEXT SHOT ONLY)</h3>
-        <p>Pick side bets and a stake (up to your bet) before a shot. They settle on that shot at the odds shown on the button, whatever happens to the main bet.</p>
-        <table class="tbl"><tr><th>Bet</th><th>Wins when</th><th>RTP</th></tr>${sides}</table>
         <h3>STEEL HELMET</h3>
         <p>From level ${c.helmet.from_level} you can buy a helmet for the next shot. If that shot is lethal, the arrow bounces off: you keep ${Math.round(c.helmet.keep * 100)}% of your multiplier and shoot the same level again. Price = chance of a lethal shot × the value it saves (RTP ${pct(c.helmet.rtp)}).</p>
         <h3>REVENGE</h3>
