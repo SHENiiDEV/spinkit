@@ -4,7 +4,7 @@
  *
  *   node scripts/simulate-exclusive.js                         # exact math for apple_shooter
  *   node scripts/simulate-exclusive.js --mc 200000             # + Monte-Carlo with the real fair hash
- *   node scripts/simulate-exclusive.js --game apple_shooter
+ *   node scripts/simulate-exclusive.js --game apple_shooter   (or hill_climb)
  *
  * Exact part: the wind of a shot comes from 2 hash bytes, so the probability of each wind tier is
  * counted over all 65,536 values; the main line is evaluated over every path of wind tiers
@@ -105,7 +105,7 @@ function helmetRtp(game, mode, level) {
     const c = sc.chanceOf(cfg, mode, level, tier);
     const price = sc.helmetPrice(cfg, round, c);
     w += p * price;
-    r += p * (1 - c) * sc.savedMultiplier(cfg, round) * BET;
+    r += p * sc.coveredLoss(cfg, c) * sc.savedMultiplier(cfg, round) * BET; // a save that covers some crash kinds pays only on those
   }
   return r / w;
 }

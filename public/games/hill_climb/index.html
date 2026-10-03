@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#16181c">
+  <title>Hill Climb Rush · SpinKit Exclusive</title>
+  <link rel="stylesheet" href="/games/assets/fonts/fonts.css">
+  <link rel="stylesheet" href="/games/hill_climb/style.css">
+</head>
+<body>
+  <div id="app" class="app loading">
+    <!-- top bar -->
+    <header class="topbar">
+      <button class="icon-btn" id="btnLobby" data-i18n-title="top.lobby" data-i18n-aria="top.lobby" title="Lobby" aria-label="Back to lobby">‹</button>
+      <div class="brand"><span class="brand-sign">HILL CLIMB</span><span class="brand-rush">RUSH</span><span class="brand-tag" data-i18n="brand.tag">SPINKIT EXCLUSIVE</span></div>
+      <div class="top-actions">
+        <button class="pill-btn fair" id="btnFair" data-i18n-title="top.fair_title" title="Provably Fair"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1l5.5 2v4.2c0 3.4-2.3 6.3-5.5 7.3-3.2-1-5.5-3.9-5.5-7.3V3z" fill="currentColor"/><path d="M5.3 8.2l1.9 1.9 3.6-3.8" stroke="#16181c" stroke-width="1.6" fill="none"/></svg><span data-i18n="top.fair">FAIR</span></button>
+        <button class="icon-btn" id="btnPaint" data-i18n-title="top.paint" data-i18n-aria="top.paint" title="Paint shop" aria-label="Paint shop"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 13c0-5 3-9 9-9 2 0 3 1 3 2.5S14.6 9 13 9c-1.4 0-2 1-1.2 2 1 1.3.4 3-1.8 3H8c-1 0-1.4.9-1 1.8C6.3 17 4 16 4 13z" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="#16181c"/><circle cx="11.5" cy="6.4" r="1.2" fill="#16181c"/></svg></button>
+        <button class="icon-btn" id="btnRules" data-i18n-title="top.rules" data-i18n-aria="top.rules" title="Rules" aria-label="Rules">?</button>
+        <button class="icon-btn" id="btnSound" data-i18n-title="top.sound" data-i18n-aria="top.sound" title="Sound" aria-label="Sound"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h3l4-3v10l-4-3H3z" fill="currentColor"/><path class="wave" d="M13 7c1.3 1.6 1.3 4.4 0 6M15.3 5c2.3 2.8 2.3 7.2 0 10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
+      </div>
+    </header>
+
+    <!-- the track -->
+    <main class="track" id="track">
+      <div class="stage" id="stage">
+        <canvas id="scene"></canvas>
+        <div class="hud-hill"><span class="hh-n" id="hHill">HILL 1/10</span><b id="hName">Village Hill</b><span class="hh-odo" id="hOdo">0 m</span></div>
+        <div class="hud-mult"><b id="hMult">—</b><small id="hNext"></small></div>
+        <div class="hud-fuel" data-i18n-title="hud.fuel" title="Fuel">
+          <svg viewBox="0 0 100 62" aria-hidden="true">
+            <path d="M10 56 A40 40 0 0 1 90 56" class="g-track"/>
+            <path d="M10 56 A40 40 0 0 1 22 27" class="g-red"/>
+            <g id="fuelNeedle"><path d="M50 56 L50 22" class="g-needle"/></g>
+            <circle cx="50" cy="56" r="5" class="g-hub"/>
+            <text x="12" y="48" class="g-l">E</text><text x="82" y="48" class="g-l">F</text>
+          </svg>
+          <span class="fuel-l" data-i18n="hud.fuel">FUEL</span>
+        </div>
+        <div class="hud-air" id="hAir" hidden></div>
+        <div class="pop" id="pop" hidden></div>
+        <div class="hint" id="hint" hidden></div>
+      </div>
+      <div class="route" id="route" data-i18n-aria="route.aria" aria-label="Track profile and checkpoint multipliers"></div>
+    </main>
+
+    <!-- trick bets -->
+    <section class="tricks" id="tricks">
+      <div class="tr-head">
+        <b data-i18n="tricks.title">TRICK BETS</b><span class="tr-sub" id="trSub">next hill only</span>
+        <div class="tr-stake"><span data-i18n="tricks.stake">STAKE</span><button class="mini" id="stDown" aria-label="−">−</button><b id="stVal">—</b><button class="mini" id="stUp" aria-label="+">+</button></div>
+        <button class="tr-help" id="trHelp" data-i18n-title="tricks.help" title="How trick bets work">?</button>
+      </div>
+      <div class="tr-chips" id="trChips"></div>
+    </section>
+
+    <!-- dashboard -->
+    <footer class="dash">
+      <button class="pedal brake" id="pedBrake" data-i18n-aria="pedal.brake" aria-label="Brake"><span class="pd-pad"></span><span class="pd-l" data-i18n="pedal.brake">BRAKE</span><small class="pd-k">← A</small></button>
+      <div class="console">
+        <div class="lcd">
+          <div class="lcd-cell credit"><small data-i18n="ctl.credit">CREDIT</small><b id="valBalance">—</b><button class="refill" id="btnRefill" data-i18n-title="ctl.free_credits" title="Free credits">+</button></div>
+          <div class="lcd-cell bet"><small data-i18n="ctl.bet">BET</small><div class="bet-row"><button class="mini" id="betDown" data-i18n-aria="ctl.bet_down" aria-label="Lower bet">−</button><b id="valBet">—</b><button class="mini" id="betUp" data-i18n-aria="ctl.bet_up" aria-label="Raise bet">+</button></div></div>
+          <div class="lcd-cell garage"><small data-i18n="ctl.vehicle">VEHICLE</small><div class="garage-seg" id="garage"></div></div>
+        </div>
+        <div class="console-row">
+          <button class="can-btn" id="btnCan" disabled><span class="can-ico" aria-hidden="true"></span><span class="can-t"><b data-i18n="can.name">JERRYCAN</b><small id="canInfo">—</small></span><span class="can-sw" aria-hidden="true"></span></button>
+          <button class="pullover" id="btnCash" disabled><span data-i18n="btn.pullover">PULL OVER</span><small id="cashVal">—</small></button>
+        </div>
+      </div>
+      <button class="pedal gas" id="pedGas" data-i18n-aria="pedal.gas" aria-label="Gas"><span class="pd-pad"></span><span class="pd-l" data-i18n="pedal.gas">GAS</span><small class="pd-sub" id="gasSub">—</small><small class="pd-k">→ D</small></button>
+    </footer>
+
+    <!-- loader -->
+    <div class="loader" id="loader">
+      <div class="loader-logo"><span class="brand-sign">HILL CLIMB</span><span class="brand-rush">RUSH</span></div>
+      <div class="loader-bar"><i id="loaderFill"></i></div>
+      <div class="loader-text" id="loaderText">LOADING…</div>
+    </div>
+
+    <!-- modals -->
+    <div class="modal" id="modalRules" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="rules.title">HOW TO PLAY</h2><label class="lang-pick"><span data-i18n="rules.language">Language</span><select id="langSel"></select></label><button class="x" data-close aria-label="Close">×</button></div>
+        <div class="sheet-body" id="rulesBody"></div>
+      </div>
+    </div>
+    <div class="modal" id="modalFair" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="fair.title">PROVABLY FAIR</h2><button class="x" data-close aria-label="Close">×</button></div>
+        <div class="sheet-body">
+          <p class="muted" data-i18n-html="fair.intro"></p>
+          <div class="kv"><span data-i18n="fair.server_hash">Server seed (SHA-256)</span><code id="pfHash">—</code></div>
+          <div class="kv"><span data-i18n="fair.client_seed">Client seed</span><div class="inline"><input id="pfClient" maxlength="64" spellcheck="false"><button class="pill-btn" id="pfRotate" data-i18n="fair.rotate">ROTATE &amp; REVEAL</button></div></div>
+          <div class="kv"><span data-i18n="fair.nonce">Next round nonce</span><code id="pfNonce">—</code></div>
+          <div id="pfRevealed" class="revealed" hidden></div>
+          <h3 data-i18n="fair.verify_title">VERIFY A HILL</h3>
+          <div class="verify">
+            <label><span data-i18n="fair.server_seed">Server seed</span><input id="vServer" spellcheck="false" data-i18n-ph="fair.server_ph" placeholder="revealed server seed"></label>
+            <label><span data-i18n="fair.client_seed">Client seed</span><input id="vClient" spellcheck="false"></label>
+            <label><span data-i18n="fair.nonce_short">Nonce</span><input id="vNonce" type="number" min="0" value="0"></label>
+            <label><span data-i18n="fair.hill">Hill #</span><input id="vShot" type="number" min="0" value="0"></label>
+            <button class="pill-btn" id="vGo" data-i18n="fair.verify">VERIFY</button>
+          </div>
+          <pre class="vout" id="vOut"></pre>
+          <h3 data-i18n="fair.session">THIS SESSION</h3>
+          <div class="history" id="pfHistory"><p class="muted" data-i18n="fair.no_rounds">No rounds yet.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal" id="modalPaint" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="paint.title">PAINT SHOP</h2><button class="x" data-close aria-label="Close">×</button></div>
+        <div class="sheet-body">
+          <p class="muted" data-i18n="paint.text">A new paint job every 100 cleared hills. Paint is cosmetic and never changes the odds.</p>
+          <div class="paints" id="paintGrid"></div>
+        </div>
+      </div>
+    </div>
+    <div class="toast" id="toast" hidden></div>
+  </div>
+  <script src="/games/common/i18n.js"></script>
+  <script src="/games/hill_climb/sfx.js"></script>
+  <script src="/games/hill_climb/scene.js"></script>
+  <script src="/games/hill_climb/game.js"></script>
+</body>
+</html>

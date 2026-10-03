@@ -1,8 +1,9 @@
 /**
  * Step crash — the math of SpinKit Exclusive ladder games (Apple Shooter, Fruit Slash).
  *
- * Optional per game: `wind` tiers (Apple Shooter), a bonus outcome that boosts the multiplier
- * (Fruit Slash "Frenzy"), a save (helmet: keep a share / shield: one step back), Revenge.
+ * Optional per game: `wind` tiers (Apple Shooter), a bonus outcome that boosts the multiplier,
+ * a save (helmet: keep a share / shield: one step back), Revenge, and `crashes` — kinds of a lethal
+ * shot (Hill Climb Rush: flip / fuel) with a save that may cover only some of them (`helmet.covers`).
  *
  * A round is a ladder of shots. Before each shot the server publishes the wind of that shot
  * (derived from the same Provably Fair hash as the outcome) and the chance to clear it:
@@ -12,6 +13,7 @@
  *   wind (m/s)  = uint16(hash[4..5]) / 65535 * 20 - 10        -> rounded to 0.1, sign = direction
  *   chance      = survival[mode][level] / (1 + tier(|wind|).bonus)
  *   u >= chance -> LETHAL; otherwise u / chance falls into bullseye | hat_trick | near_miss | hit
+ *   crashes     -> a lethal shot's kind: (u - chance) / (1 - chance) falls into the `crashes` shares
  *
  *   multiplier  = rtp x boost / chance_1 / ... / chance_k      (boost = Revenge, else 1)
  *
@@ -93,11 +95,32 @@ function outcomeOf(cfg, chance, u) {
   return entries[entries.length - 1][0];
 }
 
-/** Probability of each outcome for a shot with the given chance. */
+/** Kind of a lethal shot (null when the game has no `crashes`): same hash float, its lethal part rescaled. */
+function crashOf(cfg, chance, u) {
+  if (!cfg.crashes || u < chance) return null;
+  const x = (u - chance) / (1 - chance);
+  let acc = 0;
+  const entries = Object.entries(cfg.crashes);
+  for (const [id, share] of entries) {
+    acc += share;
+    if (x < acc) return id;
+  }
+  return entries[entries.length - 1][0];
+}
+
+/** Probability of each outcome (and crash kind) for a shot with the given chance. */
 function outcomeProbs(cfg, chance) {
   const p = { lethal: 1 - chance };
   for (const [id, share] of Object.entries(cfg.outcomes)) p[id] = chance * share;
+  for (const [id, share] of Object.entries(cfg.crashes || {})) p[id] = (1 - chance) * share;
   return p;
+}
+
+/** Probability that the next shot is lethal in a way the save covers. */
+function coveredLoss(cfg, chance) {
+  const covers = cfg.helmet && cfg.helmet.covers;
+  if (!covers || !cfg.crashes) return 1 - chance;
+  return (1 - chance) * covers.reduce((s, id) => s + (cfg.crashes[id] || 0), 0);
 }
 
 /** Side-bet odds for the next shot ({ id: odds | null when not offered }). */
@@ -126,14 +149,14 @@ function savedMultiplier(cfg, round) {
   return h.step_back ? round.prev_multiplier : h.keep * round.multiplier;
 }
 
-/** Fair price of a save for the next shot = P(lethal) x value kept / save RTP; null when not offered. */
+/** Fair price of a save for the next shot = P(covered lethal) x value kept / save RTP; null when not offered. */
 function helmetPrice(cfg, round, chance) {
   const h = cfg.helmet;
   if (!h || round.level + 1 < h.from_level) return null;
   if (h.max_saves && (round.saves || 0) >= h.max_saves) return null;
   const kept = savedMultiplier(cfg, round);
   if (!kept) return null;
-  return Math.max(1, Math.ceil((round.bet * kept * (1 - chance)) / h.rtp));
+  return Math.max(1, Math.ceil((round.bet * kept * coveredLoss(cfg, chance)) / h.rtp));
 }
 
 /**
@@ -203,6 +226,8 @@ const mechanic = {
         default_mode: c.default_mode,
         wind: c.wind ? c.wind.map((t) => ({ ...t, max: Number.isFinite(t.max) ? t.max : null })) : null,
         outcomes: c.outcomes,
+        crashes: c.crashes || null,
+        hill_names: c.hill_names || null,
         side_bets: Object.fromEntries(Object.entries(c.side_bets).map(([id, s]) => [id, { label: s.label, rtp: s.rtp, wins_on: s.wins_on, min_wind: s.min_wind || null }])),
         helmet: c.helmet,
         revenge: c.revenge || null,
@@ -215,7 +240,7 @@ const mechanic = {
 
 module.exports = {
   mechanic, floor2, round2, newServerSeed, newClientSeed, hashSeed, shotHash,
-  windTier, levelsOf, bonusDivisor, clearFactor, savedMultiplier, chanceOf, outcomeOf, outcomeProbs, sideOdds, payoutOf, helmetPrice, quote, ladder
+  windTier, levelsOf, bonusDivisor, clearFactor, savedMultiplier, chanceOf, outcomeOf, crashOf, outcomeProbs, coveredLoss, sideOdds, payoutOf, helmetPrice, quote, ladder
 };
 
 // ------------------------------------------------------------------ engine adapter (used by exclusive-service)
@@ -229,14 +254,17 @@ function resolve(game, round, seeds, q) {
   const cfg = game.crash;
   const h = shotHash(seeds.server_seed, seeds.client_seed, round.nonce, round.shot_index);
   const outcome = outcomeOf(cfg, q.chance, h.u);
+  const lethal = outcome === 'lethal';
+  const crash = lethal ? crashOf(cfg, q.chance, h.u) : null;
+  const covers = cfg.helmet && cfg.helmet.covers;
   return {
     outcome,
-    survive: outcome !== 'lethal',
-    saveable: outcome === 'lethal',
-    factor: outcome === 'lethal' ? 0 : clearFactor(cfg, q.chance, outcome),
+    survive: !lethal,
+    saveable: lethal && (!covers || covers.includes(crash)),
+    factor: lethal ? 0 : clearFactor(cfg, q.chance, outcome),
     bonus: cfg.bonus && outcome === cfg.bonus.outcome ? cfg.bonus.boost : null,
-    events: [outcome],
-    record: { wind: q.wind, wind_tier: q.wind_tier, chance: q.chance, u: h.u, hash: h.hex }
+    events: crash ? [outcome, crash] : [outcome],
+    record: { wind: q.wind, wind_tier: q.wind_tier, chance: q.chance, u: h.u, hash: h.hex, ...(crash ? { crash } : {}) }
   };
 }
 

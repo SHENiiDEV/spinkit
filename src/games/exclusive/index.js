@@ -6,5 +6,6 @@
  */
 module.exports = [
   require('./apple_shooter'),
-  require('./fruit_slash')
+  require('./fruit_slash'),
+  require('./hill_climb')
 ];
