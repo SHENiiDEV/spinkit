@@ -48,7 +48,10 @@ function buildGame(raw, opts = {}) {
   const seedKey = raw.calibration_from || raw.id;
   const scale = (cal.pay_scale || raw.pay_scale || 1) * (opts.scaleMult || 1);
   const betMultiplier = raw.bet_multiplier || (raw.paylines ? raw.paylines.length : 20);
-  const betSteps = COIN_VALUES.map((cv) => cv * betMultiplier);
+  // a game may ship a wider coin ladder (exclusive games: up to $5,000); default_max_bet caps it until the operator raises it
+  const coinValues = raw.coin_values || COIN_VALUES;
+  const betSteps = coinValues.map((cv) => cv * betMultiplier);
+  const defaultMax = raw.default_max_bet && betSteps.includes(raw.default_max_bet) ? raw.default_max_bet : betSteps[betSteps.length - 1];
   const game = {
     ...raw,
     slug: raw.id,
@@ -56,10 +59,11 @@ function buildGame(raw, opts = {}) {
     paylines_count: raw.paylines ? raw.paylines.length : null,
     ways_count: mechanic.waysCount ? mechanic.waysCount(raw) : null,
     paytable: scalePaytable(raw.paytable, scale),
-    coin_values: COIN_VALUES,
+    coin_values: coinValues,
     bet_steps: betSteps,
     min_bet: betSteps[0],
-    max_bet: betSteps[betSteps.length - 1],
+    max_bet: defaultMax, // what a player gets with no operator limits
+    max_bet_limit: betSteps[betSteps.length - 1], // the highest step an operator can open
     default_bet: DEFAULT_COIN_VALUE * betMultiplier,
     rtp: cal.rtp || raw.rtp || '96.00%',
     hit_rate: cal.hit_rate || null,

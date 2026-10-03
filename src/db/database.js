@@ -236,6 +236,8 @@ class DatabaseService {
     this.addColumn('merchants', 'wild_x1000', 'INT NOT NULL DEFAULT 0');
     this.addColumn('merchant_games', 'guaranteed_win', 'INT');
     this.addColumn('merchant_games', 'wild_x1000', 'INT');
+    this.addColumn('merchant_games', 'options', 'TEXT'); // JSON: operator options of a game (e.g. helmet_max_saves)
+    this.addColumn('merchants', 'default_lang', 'TEXT');
     // sessions
     this.addColumn('session_tokens', 'merchant_id', 'INTEGER NOT NULL DEFAULT 1');
     this.addColumn('session_tokens', 'rtp_profile', 'INT');
@@ -243,6 +245,7 @@ class DatabaseService {
     this.addColumn('session_tokens', 'force_feature', 'INT NOT NULL DEFAULT 0');
     this.addColumn('session_tokens', 'guaranteed_win', 'INT NOT NULL DEFAULT 0');
     this.addColumn('session_tokens', 'wild_x1000', 'INT NOT NULL DEFAULT 0');
+    this.addColumn('session_tokens', 'lang', 'TEXT');
     this.addColumn('session_tokens', 'lobby_url', 'TEXT');
     this.addColumn('session_tokens', 'client_ip', 'TEXT');
     this.addColumn('session_tokens', 'spins', 'INT NOT NULL DEFAULT 0');
@@ -362,13 +365,13 @@ class DatabaseService {
     const expiresAt = Date.now() + ttlMinutes * 60 * 1000;
     const user = this.findUser(userId);
     this.db.prepare(`
-      INSERT INTO session_tokens (token, user_id, game_id, expires_at, merchant_id, rtp_profile, test_mode, force_feature, guaranteed_win, wild_x1000, lobby_url, client_ip)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO session_tokens (token, user_id, game_id, expires_at, merchant_id, rtp_profile, test_mode, force_feature, guaranteed_win, wild_x1000, lobby_url, client_ip, lang)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id, game_id = excluded.game_id, expires_at = excluded.expires_at
     `).run(token, userId, gameId, expiresAt, extra.merchant_id || (user ? user.merchant_id : 1),
       extra.rtp_profile == null ? null : extra.rtp_profile, extra.test_mode ? 1 : 0, extra.force_feature ? 1 : 0,
       extra.guaranteed_win ? 1 : 0, extra.wild_x1000 ? 1 : 0,
-      extra.lobby_url || null, extra.client_ip || null);
+      extra.lobby_url || null, extra.client_ip || null, extra.lang || null);
     return { token, expires_at: expiresAt };
   }
 

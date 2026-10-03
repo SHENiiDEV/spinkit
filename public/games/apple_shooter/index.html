@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1030">
+  <title>Apple Shooter · SpinKit Exclusive</title>
+  <link rel="stylesheet" href="/games/apple_shooter/style.css">
+</head>
+<body>
+  <div id="app" class="app loading">
+    <!-- top bar -->
+    <header class="topbar">
+      <button class="icon-btn" id="btnLobby" data-i18n-title="top.lobby" data-i18n-aria="top.lobby" title="Lobby" aria-label="Back to lobby">◀</button>
+      <div class="brand">
+        <span class="brand-1">APPLE</span><span class="brand-apple" aria-hidden="true"></span><span class="brand-2">SHOOTER</span>
+        <span class="brand-tag" data-i18n="brand.tag">SPINKIT EXCLUSIVE</span>
+      </div>
+      <div class="top-actions">
+        <button class="pill-btn fair" id="btnFair" data-i18n-title="top.fair_title" title="Provably Fair"><span class="lock">■</span> <span class="fair-t" data-i18n="top.fair">FAIR</span></button>
+        <button class="icon-btn" id="btnSkins" data-i18n-title="top.skins" data-i18n-aria="top.skins" title="Skins" aria-label="Skins">★</button>
+        <button class="icon-btn" id="btnRules" data-i18n-title="top.rules" data-i18n-aria="top.rules" title="Rules" aria-label="Rules">?</button>
+        <button class="icon-btn" id="btnSound" data-i18n-title="top.sound" data-i18n-aria="top.sound" title="Sound" aria-label="Sound">♪</button>
+      </div>
+    </header>
+
+    <!-- cabinet: stage + scoreboard, ladder on the right -->
+    <main class="arcade">
+      <div class="cabinet" id="cabinet">
+        <div class="stage" id="stage">
+          <canvas id="scene" width="400" height="225"></canvas>
+          <div class="scanlines" aria-hidden="true"></div>
+          <div class="hint" id="hint" data-i18n="hint.aim">DRAG BACK TO AIM · RELEASE TO SHOOT</div>
+          <div class="revenge" id="revenge" hidden><b data-i18n="revenge.title">REVENGE!</b> <span id="revengeText"></span></div>
+          <div class="result-pop" id="resultPop" hidden></div>
+        </div>
+        <section class="scoreboard" id="nextStrip">
+          <div class="ns-item"><span class="ns-l" data-i18n="hud.level">LEVEL</span><span class="ns-v" id="nsLevel">—</span></div>
+          <div class="ns-item"><span class="ns-l" data-i18n="hud.distance">DISTANCE</span><span class="ns-v" id="nsDist">—</span></div>
+          <div class="ns-item wind"><span class="ns-l" data-i18n="hud.wind">WIND</span><span class="ns-v" id="nsWind">—</span></div>
+          <div class="ns-item"><span class="ns-l" data-i18n="hud.chance">CHANCE</span><span class="ns-v" id="nsChance">—</span></div>
+          <div class="ns-item hi next"><span class="ns-l" data-i18n="hud.next">NEXT SHOT</span><span class="ns-v" id="nsNext">—</span></div>
+        </section>
+      </div>
+      <aside class="ladder" id="ladder" data-i18n-aria="ladder.aria" aria-label="Multiplier ladder"></aside>
+    </main>
+
+    <!-- control bar -->
+    <footer class="controls">
+      <div class="wallet">
+        <div class="ctl-box credit">
+          <span class="ctl-l" data-i18n="ctl.credit">CREDIT</span><span class="ctl-v" id="valBalance">—</span>
+          <button class="refill" id="btnRefill" data-i18n-title="ctl.free_credits" title="Free credits">+</button>
+        </div>
+        <div class="ctl-box bet">
+          <span class="ctl-l" data-i18n="ctl.bet">BET</span>
+          <div class="bet-row">
+            <button class="step" id="betDown" data-i18n-aria="ctl.bet_down" aria-label="Lower bet">−</button>
+            <span class="ctl-v" id="valBet">—</span>
+            <button class="step" id="betUp" data-i18n-aria="ctl.bet_up" aria-label="Raise bet">+</button>
+          </div>
+        </div>
+        <div class="ctl-box mode">
+          <span class="ctl-l" data-i18n="ctl.risk">RISK</span>
+          <div class="seg" id="modeSeg"></div>
+        </div>
+      </div>
+      <button class="helmet-btn" id="btnHelmet" disabled>
+        <span class="hm-ico" aria-hidden="true"></span>
+        <span class="hm-t"><b data-i18n="helmet.name">STEEL HELMET</b><small id="helmetInfo">insurance for one shot</small></span>
+        <span class="hm-sw" aria-hidden="true"></span>
+      </button>
+      <button class="big-btn" id="btnMain"><span id="btnMainTop">START</span><small id="btnMainSub">PLACE BET</small></button>
+      <button class="cash-btn" id="btnCash" disabled><span data-i18n="btn.cashout">CASH OUT</span><small id="cashVal">—</small></button>
+    </footer>
+
+    <!-- loader -->
+    <div class="loader" id="loader">
+      <div class="loader-title" data-i18n-html="load.title">APPLE<br>SHOOTER</div>
+      <div class="loader-bar"><i id="loaderFill"></i></div>
+      <div class="loader-text" id="loaderText">LOADING…</div>
+    </div>
+
+    <!-- modals -->
+    <div class="modal" id="modalRules" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="rules.title">HOW TO PLAY</h2><label class="lang-pick"><span data-i18n="rules.language">Language</span><select id="langSel"></select></label><button class="x" data-close>×</button></div>
+        <div class="sheet-body" id="rulesBody"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="modalFair" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="fair.title">PROVABLY FAIR</h2><button class="x" data-close>×</button></div>
+        <div class="sheet-body">
+          <p class="muted" data-i18n-html="fair.intro"></p>
+          <div class="kv"><span data-i18n="fair.server_hash">Server seed (SHA-256)</span><code id="pfHash">—</code></div>
+          <div class="kv"><span data-i18n="fair.client_seed">Client seed</span><div class="inline"><input id="pfClient" maxlength="64" spellcheck="false"><button class="pill-btn" id="pfRotate" data-i18n="fair.rotate">ROTATE &amp; REVEAL</button></div></div>
+          <div class="kv"><span data-i18n="fair.nonce">Next round nonce</span><code id="pfNonce">—</code></div>
+          <div id="pfRevealed" class="revealed" hidden></div>
+
+          <h3 data-i18n="fair.verify_title">VERIFY A SHOT</h3>
+          <div class="verify">
+            <label><span data-i18n="fair.server_seed">Server seed</span><input id="vServer" spellcheck="false" data-i18n-ph="fair.server_ph" placeholder="revealed server seed"></label>
+            <label><span data-i18n="fair.client_seed">Client seed</span><input id="vClient" spellcheck="false"></label>
+            <label><span data-i18n="fair.nonce_short">Nonce</span><input id="vNonce" type="number" min="0" value="0"></label>
+            <label><span data-i18n="fair.shot">Shot #</span><input id="vShot" type="number" min="0" value="0"></label>
+            <button class="pill-btn" id="vGo" data-i18n="fair.verify">VERIFY</button>
+          </div>
+          <pre class="vout" id="vOut"></pre>
+
+          <h3 data-i18n="fair.session">THIS SESSION</h3>
+          <div class="history" id="pfHistory"><p class="muted" data-i18n="fair.no_rounds">No rounds yet.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="modalSkins" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="skins.title">SKINS</h2><button class="x" data-close>×</button></div>
+        <div class="sheet-body">
+          <p class="muted" data-i18n="skins.text">Unlock a new look every 100 cleared shots. Skins are cosmetic and never change the odds.</p>
+          <div class="skins" id="skinsGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+  </div>
+
+  <script src="/games/common/i18n.js"></script>
+  <script src="/games/apple_shooter/sfx.js"></script>
+  <script src="/games/apple_shooter/scene.js"></script>
+  <script src="/games/apple_shooter/game.js"></script>
+</body>
+</html>

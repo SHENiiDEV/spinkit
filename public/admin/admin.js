@@ -249,6 +249,7 @@
           <label>Status<select id="f_status"><option ${m.status === 'active' ? 'selected' : ''}>active</option><option ${m.status === 'suspended' ? 'selected' : ''}>suspended</option></select></label>
           <label>Currency<input id="f_currency" value="${esc(m.currency)}" minlength="2" maxlength="8" placeholder="e.g. EU, US, RU, USD, GC"></label>
           <label>Lobby URL (in-game "back to lobby")<input id="f_lobby" value="${esc(m.lobby_url || '')}" placeholder="https://casino.example/lobby"></label>
+          <label>Game language<select id="f_lang"><option value="">Player's browser language</option>${(state.meta.langs || []).map((l) => `<option value="${l}" ${m.default_lang === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}</select></label>
         </div>
         <div class="form-grid section">
           <label class="check"><input type="checkbox" id="f_demo" ${m.demo_refill ? 'checked' : ''}>Free credits button in games (social / demo casinos)</label>
@@ -256,7 +257,7 @@
         <label class="section">Notes<textarea id="f_notes">${esc(m.notes || '')}</textarea></label>
         <div class="row section"><span class="spacer"></span><button class="btn primary" id="saveGen">Save</button></div></div>
         ${m.status === 'suspended' ? '<div class="hint danger-box section">Suspended merchants cannot call the API and their players cannot play.</div>' : ''}`;
-      $('#saveGen').addEventListener('click', save(() => ({ name: $('#f_name').value, status: $('#f_status').value, currency: $('#f_currency').value, lobby_url: $('#f_lobby').value, demo_refill: $('#f_demo').checked, notes: $('#f_notes').value })));
+      $('#saveGen').addEventListener('click', save(() => ({ name: $('#f_name').value, status: $('#f_status').value, currency: $('#f_currency').value, lobby_url: $('#f_lobby').value, default_lang: $('#f_lang').value || null, demo_refill: $('#f_demo').checked, notes: $('#f_notes').value })));
     }
 
     if (tab === 'limits') {
@@ -330,7 +331,8 @@
           { h: 'Effective RTP', v: (g) => `<span class="badge ${g.effective.rtp_profile < 96 ? 'gold' : 'green'}">${esc(g.effective.rtp)}</span>` },
           { h: `Min bet ${esc(info.symbol)}`, v: (g) => `<input data-min="${g.game_id}" type="number" step="0.01" style="width:90px" value="${toMajor(g.min_bet, info)}" placeholder="—">` },
           { h: `Max bet ${esc(info.symbol)}`, v: (g) => `<input data-max="${g.game_id}" type="number" step="0.01" style="width:90px" value="${toMajor(g.max_bet, info)}" placeholder="—">` },
-          { h: 'Bet range', v: (g) => `${money(g.effective.min_bet, info)} – ${money(g.effective.max_bet, info)}` }
+          { h: 'Bet range', v: (g) => `${money(g.effective.min_bet, info)} – ${money(g.effective.max_bet, info)}${g.bet_ladder && g.bet_ladder.limit > g.effective.max_bet ? `<div class="muted small">ladder up to ${money(g.bet_ladder.limit, info)}</div>` : ''}` },
+          { h: 'Options', v: (g) => Object.entries(g.option_schema || {}).map(([k, d]) => `<label class="small" title="${esc(d.hint || '')}">${esc(d.label)}<input data-opt="${g.game_id}" data-key="${k}" type="number" min="${d.min}" max="${d.max}" step="1" style="width:70px;margin-left:6px" value="${g.options && g.options[k] != null ? g.options[k] : ''}" placeholder="${d.default == null ? '∞' : d.default}"><div class="muted small">${esc(d.hint || '')}</div></label>`).join('') || '<span class="muted">—</span>' }
         ];
         // grouped by collection (games with artwork first)
         $('#gt').innerHTML = cols.map((c) => {
@@ -348,6 +350,7 @@
         $$('[data-rtp]').forEach((c) => c.addEventListener('change', () => upd(c.dataset.rtp, { rtp_profile: c.value ? Number(c.value) : null })));
         $$('[data-min]').forEach((c) => c.addEventListener('change', () => upd(c.dataset.min, { min_bet: c.value ? toMinor(c.value, info) : null })));
         $$('[data-max]').forEach((c) => c.addEventListener('change', () => upd(c.dataset.max, { max_bet: c.value ? toMinor(c.value, info) : null })));
+        $$('[data-opt]').forEach((c) => c.addEventListener('change', () => upd(c.dataset.opt, { options: { [c.dataset.key]: c.value === '' ? null : Number(c.value) } })));
       };
       render();
       $$('[data-col]').forEach((b) => b.addEventListener('click', () => {

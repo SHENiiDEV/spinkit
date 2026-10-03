@@ -25,6 +25,10 @@ class RgsController {
     return wrap(() => gameService.spin(token, bet, buy));
   }
 
+  static handleAction(body = {}) {
+    return wrap(() => gameService.action(body.token, body));
+  }
+
   static handleRefill({ token } = {}) {
     return wrap(() => gameService.refill(token));
   }

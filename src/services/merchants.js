@@ -7,7 +7,7 @@ const jackpots = require('./jackpots');
 const db = () => dbService.db;
 
 const PUBLIC_FIELDS = ['id', 'code', 'name', 'status', 'currency', 'float_balance', 'float_unlimited', 'ip_whitelist', 'require_signature',
-  'rtp_profile', 'min_bet', 'max_bet', 'max_win_x', 'guaranteed_win', 'wild_x1000', 'jackpot_enabled', 'demo_refill', 'lobby_url', 'notes', 'created_at'];
+  'rtp_profile', 'min_bet', 'max_bet', 'max_win_x', 'default_lang', 'guaranteed_win', 'wild_x1000', 'jackpot_enabled', 'demo_refill', 'lobby_url', 'notes', 'created_at'];
 
 function present(m, { withSecret = false } = {}) {
   if (!m) return null;
@@ -65,6 +65,42 @@ function validateLimit(v, name) {
   return n;
 }
 
+/** Interface languages of the games (ISO 639-1). null = the player's browser language. */
+const LANGS = ['en', 'ru', 'lv', 'lt', 'et', 'uk', 'de', 'es', 'pt', 'fr', 'it', 'tr', 'pl'];
+function validateLang(v) {
+  if (v === null || v === '' || v === undefined) return null;
+  const l = String(v).trim().toLowerCase().slice(0, 2);
+  if (!LANGS.includes(l)) throw bad('INVALID_LANG', `lang must be one of ${LANGS.join(', ')}`);
+  return l;
+}
+
+/** Operator options of a game (game.operator_options): validated values, null removes a key. */
+function validateOptions(game, patch, current = {}) {
+  const schema = game.operator_options || {};
+  if (patch === null) return {};
+  if (typeof patch !== 'object' || Array.isArray(patch)) throw bad('INVALID_OPTIONS', 'options must be an object');
+  const out = { ...current };
+  for (const [k, v] of Object.entries(patch)) {
+    const def = schema[k];
+    if (!def) throw bad('INVALID_OPTIONS', `${game.id} has no option ${k}${Object.keys(schema).length ? ` (allowed: ${Object.keys(schema).join(', ')})` : ''}`);
+    if (v === null || v === '') { delete out[k]; continue; }
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < def.min || n > def.max) throw bad('INVALID_OPTIONS', `${k} must be an integer ${def.min}…${def.max} or null`);
+    out[k] = n;
+  }
+  return out;
+}
+
+const parseOptions = (s) => { try { return JSON.parse((s && s.options) || '{}') || {}; } catch { return {}; } };
+
+/** Applies operator options to a game definition (returns a copy when something changes). */
+function applyOptions(game, options) {
+  const hms = options.helmet_max_saves;
+  if (hms === undefined || hms === null || !game.crash || !game.crash.helmet) return game;
+  const helmet = hms === 0 ? null : { ...game.crash.helmet, max_saves: hms };
+  return { ...game, crash: { ...game.crash, helmet } };
+}
+
 function create(data, actor = 'system') {
   const code = String(data.code || '').trim().toLowerCase();
   if (!/^[a-z0-9_-]{2,32}$/.test(code)) throw bad('INVALID_CODE', 'Merchant code: 2-32 chars, a-z 0-9 _ -');
@@ -99,6 +135,7 @@ const UPDATABLE = {
   jackpot_enabled: (v) => (v ? 1 : 0),
   demo_refill: (v) => (v ? 1 : 0),
   lobby_url: (v) => (v ? String(v).slice(0, 500) : null),
+  default_lang: (v) => validateLang(v),
   notes: (v) => (v ? String(v).slice(0, 2000) : null),
   ip_whitelist: (v) => {
     const arr = (Array.isArray(v) ? v : String(v || '').split(/[\s,]+/)).map((x) => String(x).trim()).filter(Boolean);
@@ -212,7 +249,10 @@ function listGameSettings(merchantId) {
       rtp_profile: s.rtp_profile == null ? null : s.rtp_profile,
       min_bet: s.min_bet == null ? null : s.min_bet,
       max_bet: s.max_bet == null ? null : s.max_bet,
-      effective: { rtp: eff.rtp, rtp_profile: eff.rtp_profile, min_bet: eff.min_bet, max_bet: eff.max_bet, default_bet: eff.default_bet }
+      options: parseOptions(s),
+      option_schema: g.operator_options || {},
+      bet_ladder: { steps: g.bet_steps, default_max: g.max_bet, limit: g.max_bet_limit || g.max_bet },
+      effective: { rtp: eff.rtp, rtp_profile: eff.rtp_profile, min_bet: eff.min_bet, max_bet: eff.max_bet, default_bet: eff.default_bet, options: eff.options }
     };
   });
 }
@@ -238,9 +278,9 @@ function setGameSetting(merchantId, gameId, patchIn, actor) {
   for (const id of ids) if (!GAMES_CATALOG[id]) throw notFound('GAME_NOT_FOUND', `Game ${id} not found`);
   const cur = gameSettingsMap(merchantId);
   const stmt = db().prepare(`
-    INSERT INTO merchant_games (merchant_id, game_id, enabled, rtp_profile, min_bet, max_bet) VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO merchant_games (merchant_id, game_id, enabled, rtp_profile, min_bet, max_bet, options) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(merchant_id, game_id) DO UPDATE SET enabled = excluded.enabled, rtp_profile = excluded.rtp_profile,
-      min_bet = excluded.min_bet, max_bet = excluded.max_bet
+      min_bet = excluded.min_bet, max_bet = excluded.max_bet, options = excluded.options
   `);
   const pick = (id, k, fn) => (patch[k] === undefined ? (cur[id] ? cur[id][k] : null) : fn(patch[k]));
   dbService.tx(() => {
@@ -250,7 +290,14 @@ function setGameSetting(merchantId, gameId, patchIn, actor) {
       const minB = pick(id, 'min_bet', (v) => validateLimit(v, 'min_bet'));
       const maxB = pick(id, 'max_bet', (v) => validateLimit(v, 'max_bet'));
       if (minB && maxB && minB > maxB) throw bad('INVALID_LIMIT', 'min_bet must be <= max_bet');
-      stmt.run(merchantId, id, enabled, prof, minB, maxB);
+      let opts = parseOptions(cur[id]);
+      if (patch.options !== undefined) {
+        // bulk updates skip games that do not have the option
+        const schema = GAMES_CATALOG[id].operator_options || {};
+        const own = patch.options && gameId === '*' ? Object.fromEntries(Object.entries(patch.options).filter(([k]) => schema[k])) : patch.options;
+        opts = validateOptions(GAMES_CATALOG[id], own, opts);
+      }
+      stmt.run(merchantId, id, enabled, prof, minB, maxB, Object.keys(opts).length ? JSON.stringify(opts) : null);
     }
   });
   dbService.audit(actor, 'merchant.game_settings', `merchant:${merchantId}`, { game: gameId, ...(filter ? { filter } : {}), ...patch });
@@ -267,12 +314,17 @@ function effective(merchant, gameId, setting = undefined, session = null) {
   const enabled = s.enabled === undefined ? true : !!s.enabled;
   const qa = !!(session && session.test_mode && session.rtp_profile != null);
   const profile = qa ? Number(session.rtp_profile) : (s.rtp_profile != null ? s.rtp_profile : m.rtp_profile || 96);
-  const game = getGame(gameId, profile, { qa });
-  if (!game) throw notFound('GAME_NOT_FOUND', `Game ${gameId} not found`);
+  const base = getGame(gameId, profile, { qa });
+  if (!base) throw notFound('GAME_NOT_FOUND', `Game ${gameId} not found`);
+  const schema = base.operator_options || {};
+  const options = Object.fromEntries(Object.entries(schema).map(([k, d]) => [k, d.default === undefined ? null : d.default]));
+  Object.assign(options, parseOptions(s));
+  const game = applyOptions(base, options);
 
   const lo = Math.max(m.min_bet || 0, s.min_bet || 0);
   const hiCands = [m.max_bet, s.max_bet].filter((x) => x);
-  const hi = hiCands.length ? Math.min(...hiCands) : Infinity;
+  // no operator max → the game's default cap (exclusive games open bets above it only when the operator sets max_bet)
+  const hi = hiCands.length ? Math.min(...hiCands) : (game.max_bet || Infinity);
   let steps = game.bet_steps.filter((b) => b >= lo && b <= hi);
   if (!steps.length) {
     // limits fall between two steps: take the closest step to the allowed range
@@ -317,6 +369,7 @@ function effective(merchant, gameId, setting = undefined, session = null) {
     min_bet: steps[0],
     max_bet: steps[steps.length - 1],
     default_bet: def,
+    options,
     max_win_x: m.max_win_x ? Math.min(m.max_win_x, game.max_win_x) : game.max_win_x
   };
 }
@@ -325,5 +378,5 @@ module.exports = {
   present, get, mustGet, list, create, update, rotateSecret,
   createToken, listTokens, revokeToken, authenticate, adjustFloat,
   listGameSettings, setGameSetting, effective, gameSettingsMap, isGameEnabled, RTP_PROFILES, QA_RTP_RANGE,
-  validateCurrency
+  validateCurrency, validateLang, LANGS
 };

@@ -163,3 +163,53 @@ node scripts/simulate.js --game <id> --rounds 1000000
 ```
 
 Golden master снимает хэши готовых описаний игр, клиентского конфига, ответа Merchant API и 150+ спинов (включая купленные фриспины) на фиксированном сиде: любой рефакторинг, который случайно меняет математику или контракт API, сразу виден.
+
+## SpinKit Exclusive (не слоты)
+
+Категория лобби `exclusive` — собственные игры с раундом из нескольких запросов: **Apple Shooter** (ретро step crash с ветром) и **Fruit Slash** (свайп-нарезка волн с бомбами).
+
+```
+src/games/exclusive/              описания игр (kind: 'exclusive', своя mechanic и свой client)
+  apple_shooter.js                уровни, шансы Medium/High, ветер, шлем (без сайд-бетов), Revenge, скины
+src/engine/exclusive/step-crash.js  математика + Provably Fair (чистые функции)
+src/engine/mechanics/step_crash.js  регистрация в реестре механик (stateful: true)
+src/services/exclusive-service.js   раунд, кошелёк, запись раунда в rgs_transactions
+  fruit_slash.js                  волны, фрукты/бомбы, Frenzy Banana (бонус ×1.5), Samurai Shield (шаг назад, 1 раз)
+public/games/apple_shooter/       свой клиент: index.html, style.css, scene.js (canvas 400×225), game.js, sfx.js
+public/games/fruit_slash/         свой клиент: canvas 960×540 в разрешении экрана, свайп-лезвие, авто-нарезка под исход
+scripts/simulate-exclusive.js     точный расчёт RTP (+ --mc N: Monte-Carlo на настоящем HMAC)
+test/exclusive.test.js            математика, PF, денежный поток, проверка раундов раскрытым сидом
+```
+
+**API клиента** (токен сессии, как у слотов; `/rgs/spin` для таких игр отвечает `USE_ACTION_ENDPOINT`):
+
+| запрос | что делает |
+|---|---|
+| `POST /api/v1/rgs/init { token }` | конфиг (`game_config.crash`), незавершённый раунд, `next` — котировка следующего выстрела, PF-хэш, скины, Revenge |
+| `POST /api/v1/rgs/action { token, action: 'start', bet, mode }` | списывает ставку, открывает раунд (`mode`: `medium` / `high`) |
+| `… action: 'shoot', helmet, expect_shot }` | один выстрел; шлем — только на этот выстрел; `expect_shot` защищает от двойного клика (Fruit Slash: ещё `cut` и `side_bets`) |
+| `… action: 'cashout'` | выплата `bet × multiplier` (после ≥ 1 пройденного уровня) |
+| `… action: 'seed', client_seed` | между раундами: раскрывает старый server seed, выдаёт новый |
+| `… action: 'skin', skin` | выбрать открытый скин (каждые 100 пройденных выстрелов) |
+
+**Математика.** Выстрел = `HMAC_SHA256(server_seed, client_seed:nonce:shot)`: байты 0-3 → `u`, байты 4-5 → ветер ±10 м/с.
+`chance = survival[mode][level] / (1 + бонус ветра)`, `u ≥ chance` → летальный, иначе `u/chance` делится на bullseye / hat_trick / near_miss / hit.
+Множитель = `rtp / chance₁ / … / chanceₖ`: край казино только в первом выстреле, все следующие EV-нейтральны, поэтому RTP основной ставки = 96.5% при любой стратегии кэшаута (с округлением множителя до 0.01: 96.4–96.7% на 1–3 выстрелах, дальше 96.50%). Сайд-беты (только Fruit Slash): `odds = floor(0.965 / P(событие))`. Шлем: цена = `P(летальный) × 0.5 × множитель × ставка / 0.965`. RTP-профили оператора (88/94/…) масштабируют целевой RTP.
+
+**Revenge** — подарок поверх RTP. В GDD x1.30 вместо x1.06 (буст лестницы ×1.226) дал бы игроку, который всегда идёт до 10-го уровня, ~99.7%; по умолчанию стоит x1.10 (×1.0377, худший случай +0.55 п.п.). Меняется одной строкой `revenge.boost` в `apple_shooter.js`, проверка — `npm run simulate:exclusive`.
+
+**Прицел косметический**: угол и натяжение только рисуют полёт, сервер логирует их в `details.shots[].aim`, но не использует. Об этом сказано в правилах игры.
+
+Каждый раунд — одна строка `rgs_transactions` (`bet_type = 'step_crash'`): `bet_amount` = ставка + шлемы (+ сайд-беты во Fruit Slash), `details.shots` — все выстрелы с хэшами, шансами, ветром и ставками; по раскрытому сиду раунд проверяется целиком.
+
+**Опции движка step crash** (в `crash` описания игры): `wind` — тиры ветра (без него ветра нет); `bonus: { outcome, boost }` — исход, умножающий лестницу (шаг делится на D = 1 + доля × (boost − 1), поэтому остаётся EV-нейтральным); `helmet: { from_level, keep }` — сохраняет долю множителя, или `{ from_level, step_back: true, max_saves }` — откат на шаг назад; `revenge` — необязателен. Новая игра этого типа = файл в `src/games/exclusive/` + клиент в `public/games/<client>/`.
+
+**Fruit Slash** работает на отдельном движке `lane_slash` (`src/engine/exclusive/lane-slash.js`): 8 дорожек, перед волной игрок свайпом задаёт разрез (непрерывный отрезок из k дорожек) и жмёт THROW. Запрос `shoot` несёт `cut: { from, to }`; сервер только после этого строит волну из HMAC (слова 0–6 — тасовка Фишера–Йетса «фрукт / бомба / пусто», слово 7 — драконий фрукт) и считает результат: бомба в разрезе — проигрыш (щит поглощает 1 раз за раунд, шаг назад), ни одного фрукта — проигрыш, f фруктов — множитель × g(f)/Z(k), g(f) = 1 + 0.25(f − 1). Z(k) — среднее g по всем исходам ширины k, поэтому каждая волна EV-нейтральна при любой ширине, а RTP = 96.5% для любой стратегии (точный расчёт с округлением и лимитом: `node scripts/simulate-lanes.js` → 96.2–96.8% на 1–3 волнах, 96.5% дальше). Ширина предлагается, только пока её лучший исход не превышает max win; если не осталось ни одной — автокэшаут. Котировка (`next.spans`) зависит только от номера волны и ширины, о раскладе волны до фиксации разреза клиент не получает ничего.
+
+### Настройки оператора и языки
+
+**Лестница ставок.** Exclusive-игры объявляют свою `coin_values` (× `bet_multiplier` 20 = $0.20 … $5 000) и `default_max_bet: 10000`: без настроек игроку доступно до $100. Оператор открывает больше, задав `max_bet` игры (`PATCH /api/v2/games/:id/settings { max_bet }` в минорных единицах или в админке → Merchant → Games). Общий `max_bet` мерчанта (ставит провайдер) действует поверх. Слоты не меняются: у них ладдер по-прежнему до $100. Поля в `build.js`: `max_bet` — потолок по умолчанию, `max_bet_limit` — верх лестницы.
+
+**Опции игры** — `operator_options` в описании игры (схема: label / min / max / default / hint), значения в `merchant_games.options` (JSON). Сейчас одна: `helmet_max_saves` — спасений шлемом (Apple Shooter) / щитом (Fruit Slash) за раунд; пусто — по умолчанию игры (Apple — без лимита, Fruit — 1), `0` — шлем выключен. `merchants.effective()` накладывает опции на копию игры (`applyOptions`), каталог не мутируется; клиент получает итог в `game_config.crash.helmet`. Оператор меняет: `PATCH /api/v2/games/:id/settings { options: { helmet_max_saves: 2 } }`; RTP-профили остаются за провайдером.
+
+**Языки.** 13 языков: en, ru, uk, lv, lt, et, pl, de, es, pt, fr, it, tr. Словари — `public/games/<игра>/lang/<код>.json`, загрузчик — `public/games/common/i18n.js` (`I18N.t`, `I18N.p` для множественного числа через `Intl.PluralRules`, `data-i18n*` атрибуты). Порядок выбора: `?lang=` в URL → выбор игрока в правилах (запоминается в браузере) → язык сессии (`lang` в `POST /api/v2/sessions`, иначе `default_lang` мерчанта) → язык браузера → английский. Деньги форматируются `Intl.NumberFormat` под локаль. Проверка словарей: `node scripts/check-i18n.js` (ключи, плейсхолдеры, HTML-теги против en.json). Шрифты: Press Start 2P / Bungee / Roboto Condensed с latin-ext и кириллицей; в Apple Shooter у Silkscreen нет кириллицы и ł ą š ğ…, поэтому для ru/uk/pl/lv/lt/et/tr весь текст идёт в Press Start 2P. Новый язык = файл `<код>.json` в обеих играх + код в `LANGS` (`merchants.js`, `i18n.js`).

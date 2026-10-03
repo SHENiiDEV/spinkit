@@ -10,6 +10,7 @@ const { SKINS } = require('./skins/classic');
 const { GIANT_SKINS } = require('./skins/giants');
 
 const RAW_GAMES = require('./definitions');
+const EXCLUSIVE_GAMES = require('./exclusive');
 
 const GAMES_CATALOG = {};
 function add(raw) {
@@ -22,6 +23,8 @@ const template = (id) => {
   return tpl;
 };
 
+// SpinKit Exclusive (non-slot, stateful rounds) lead the lobby
+EXCLUSIVE_GAMES.forEach(add);
 RAW_GAMES.forEach(add);
 SKINS.forEach((sk) => add(applySkin(template(sk.base), sk)));
 GIANT_SKINS.forEach((sk) => add(applyGiantSkin(template(sk.base || 'enchanted_knight'), sk)));
@@ -109,4 +112,4 @@ const COLLECTIONS = {
 };
 const collectionOf = (g) => (g.theme && g.theme.stage ? 'artwork' : 'basic');
 
-module.exports = { COLLECTIONS, collectionOf, GAMES_CATALOG, RAW_GAMES, CALIBRATION, RTP_PROFILES, QA_RTP_RANGE, buildGame, getGame, toIconFile, applySkin, applyGiantSkin };
+module.exports = { EXCLUSIVE_GAMES, COLLECTIONS, collectionOf, GAMES_CATALOG, RAW_GAMES, CALIBRATION, RTP_PROFILES, QA_RTP_RANGE, buildGame, getGame, toIconFile, applySkin, applyGiantSkin };

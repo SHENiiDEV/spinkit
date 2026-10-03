@@ -82,7 +82,15 @@ function openapi(baseUrl) {
     security: [{ bearer: [] }],
     paths: {
       '/api/v2/health': { get: { tags: M, summary: 'Health check', security: [], responses: ok({ type: 'object' }, { status: 'ok', games: 100 }) } },
-      '/api/v2/merchant': { get: { tags: M, summary: 'Your merchant account (float balance, limits, RTP profile)', responses: { ...ok({ type: 'object' }), ...errs(401, 403) } } },
+      '/api/v2/merchant': {
+        get: { tags: M, summary: 'Your merchant account (float balance, limits, RTP profile)', responses: { ...ok({ type: 'object' }), ...errs(401, 403) } },
+        patch: {
+          tags: M, summary: 'Change your default game language or lobby URL',
+          description: '`default_lang` is used when a session is launched without `lang` (null = the player\'s browser language). Languages: en, ru, lv, lt, et, uk, de, es, pt, fr, it, tr, pl.',
+          requestBody: body({ type: 'object', properties: { default_lang: { type: 'string', nullable: true }, lobby_url: { type: 'string', nullable: true } } }, { default_lang: 'de' }),
+          responses: { ...ok({ type: 'object' }), ...errs(400, 401) }
+        }
+      },
       '/api/v2/games': {
         get: {
           tags: M, summary: 'List games enabled for your merchant',
@@ -91,6 +99,22 @@ function openapi(baseUrl) {
         }
       },
       '/api/v2/games/{game_id}': { get: { tags: M, summary: 'Game details: paytable, features, bet ladder, RTP', parameters: [p('game_id', 'Game id')], responses: { ...ok({ type: 'object' }), ...errs(401, 404) } } },
+      '/api/v2/games/{game_id}/settings': {
+        get: { tags: M, summary: 'Your settings of a game: bet limits, operator options, bet ladder', parameters: [p('game_id', 'Game id')], responses: { ...ok({ type: 'object' }), ...errs(401, 404) } },
+        patch: {
+          tags: M, summary: 'Change bet limits and options of a game',
+          description: [
+            '`min_bet` / `max_bet` in minor units (null = default). Bets snap to the game ladder (`bet_ladder.steps`).',
+            'SpinKit Exclusive games ship a ladder up to 5,000.00 and open up to 100.00 by default; set `max_bet` to open higher bets.',
+            'A merchant-wide max_bet (set by the provider) still applies on top.',
+            '`options` are game specific (`option_schema`): Apple Shooter / Fruit Slash `helmet_max_saves` = saves per round (0 = off, null = game default).',
+            'RTP profiles are set by the provider.'
+          ].join(' '),
+          parameters: [p('game_id', 'Game id')],
+          requestBody: body({ type: 'object', properties: { enabled: { type: 'boolean' }, min_bet: { type: 'integer', nullable: true }, max_bet: { type: 'integer', nullable: true }, options: { type: 'object' } } }, { max_bet: 100000, options: { helmet_max_saves: 2 } }),
+          responses: { ...ok({ type: 'object' }), ...errs(400, 401, 404) }
+        }
+      },
       '/api/v2/players': {
         post: {
           tags: M, summary: 'Create (or fetch) a player',
@@ -124,6 +148,7 @@ function openapi(baseUrl) {
             properties: {
               external_id: { type: 'string' }, game_id: { type: 'string' }, username: { type: 'string' }, lobby_url: { type: 'string', description: 'Where the in-game "Back to lobby" button leads' },
               ttl_minutes: { type: 'integer', default: 240 },
+              lang: { type: 'string', description: 'Interface language: en, ru, lv, lt, et, uk, de, es, pt, fr, it, tr, pl (default: merchant default_lang, then the browser language)' },
               test: { type: 'object', properties: { rtp_profile: { type: 'number', description: 'QA only: 10-300' }, force_feature: { type: 'boolean', description: 'QA only: next paid spin triggers free spins' } } }
             }
           }, { external_id: 'user-1001', game_id: 'olympus_thunder', lobby_url: 'https://casino.example/lobby' }),

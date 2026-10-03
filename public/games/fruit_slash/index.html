@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#140a05">
+  <title>Fruit Slash · SpinKit Exclusive</title>
+  <link rel="stylesheet" href="/games/assets/fonts/fonts.css">
+  <link rel="stylesheet" href="/games/fruit_slash/style.css">
+</head>
+<body>
+  <div id="app" class="app loading">
+    <header class="topbar">
+      <button class="icon-btn" id="btnLobby" data-i18n-title="top.lobby" data-i18n-aria="top.lobby" title="Lobby" aria-label="Back to lobby">‹</button>
+      <div class="brand"><span class="b1">FRUIT</span><span class="b2">SLASH</span><span class="tag" data-i18n="brand.tag">SPINKIT EXCLUSIVE</span></div>
+      <div class="top-actions">
+        <button class="pill-btn fair" id="btnFair" data-i18n="top.fair" data-i18n-title="top.fair_title" title="Provably Fair">✓ FAIR</button>
+        <button class="icon-btn" id="btnSkins" data-i18n-title="top.skins" data-i18n-aria="top.skins" title="Blades" aria-label="Blades">⚔</button>
+        <button class="icon-btn" id="btnRules" data-i18n-title="top.rules" data-i18n-aria="top.rules" title="Rules" aria-label="Rules">?</button>
+        <button class="icon-btn" id="btnSound" data-i18n-title="top.sound" data-i18n-aria="top.sound" title="Sound" aria-label="Sound">♪</button>
+      </div>
+    </header>
+
+    <main class="dojo">
+      <div class="drawer-scrim" id="sbScrim" hidden></div>
+      <aside class="talismans" id="talismans" data-i18n-aria="sb.aria" aria-label="Side bets">
+        <div class="tal-head">
+          <div>
+            <h2 data-i18n="sb.title">Side bets</h2>
+            <p data-i18n-html="sb.subtitle">Extra wagers on the <b>next wave only</b></p>
+          </div>
+          <button class="sb-stake" id="sbStake" data-i18n-title="sb.stake_title" title="Stake per side bet"><span data-i18n="sb.stake">STAKE</span> <b id="sbStakeVal">$0.20</b></button>
+          <button class="x tal-close" id="sbClose" data-i18n-aria="sb.close" aria-label="Close side bets">×</button>
+        </div>
+        <details class="tal-how" id="talHow">
+          <summary data-i18n="sb.how">How side bets work</summary>
+          <ol>
+            <li data-i18n-html="sb.how1"></li>
+            <li data-i18n-html="sb.how2"></li>
+            <li data-i18n-html="sb.how3"></li>
+            <li data-i18n-html="sb.how4"></li>
+          </ol>
+        </details>
+        <div class="tal-last" id="sbLast" hidden></div>
+        <div class="tal-list" id="sbRow"></div>
+      </aside>
+
+      <section class="arena">
+        <div class="arena-top">
+        <button class="sb-toggle" id="sbToggle" aria-controls="talismans"><span class="sbt-ico">◆</span><span class="sbt-txt"><b data-i18n="sb.toggle">SIDE BETS</b><small id="sbSummary">tap to add</small></span></button>
+        <ol class="steps" id="steps">
+          <li data-step="1"><i>1</i><span><b data-i18n="steps.1">Swipe your cut</b><em data-i18n="steps.1s">across the lanes</em></span></li>
+          <li data-step="2"><i>2</i><span><b data-i18n="steps.2">Throw</b><em data-i18n="steps.2s">the wave flies into it</em></span></li>
+          <li data-step="3"><i>3</i><span><b data-i18n="steps.3">Cash out</b><em data-i18n="steps.3s">or go for the next wave</em></span></li>
+        </ol>
+        </div>
+        <div class="stage" id="stage">
+          <canvas id="scene"></canvas>
+          <div class="hud hud-tl"><span class="hud-k"><span data-i18n="hud.wave">WAVE</span> <b id="nsLevel">—</b></span><span class="hud-v" id="nsWave">—</span></div>
+          <div class="hud hud-tr" id="nsObjects">—</div>
+          <div class="hud hud-b" id="hudCut">
+            <span><small data-i18n="hud.cut">CUT</small><b id="nsCut">—</b></span>
+            <span><small data-i18n="hud.chance">CHANCE</small><b id="nsChance">—</b></span>
+            <span class="hi"><small data-i18n="hud.if_cleared">IF CLEARED</small><b id="nsNext">—</b></span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="ladder" id="ladder" data-i18n-aria="ladder.aria" aria-label="Multiplier ladder"></aside>
+    </main>
+
+    <footer class="tray">
+      <div class="wallet">
+        <div class="w-cell credit"><small data-i18n="ctl.credit">CREDIT</small><b id="valBalance">—</b><button class="refill" id="btnRefill" data-i18n-title="ctl.free_credits" title="Free credits">+</button></div>
+        <div class="w-cell bet"><small data-i18n="ctl.bet">BET</small><div class="bet-row"><button class="step" id="betDown" data-i18n-aria="ctl.bet_down" aria-label="Lower bet">−</button><b id="valBet">—</b><button class="step" id="betUp" data-i18n-aria="ctl.bet_up" aria-label="Raise bet">+</button></div></div>
+        <div class="w-cell mode"><small data-i18n="ctl.risk">RISK</small><div class="seg" id="modeSeg"></div></div>
+      </div>
+      <button class="gong" id="btnMain"><span id="btnMainTop">START</span><small id="btnMainSub">PLACE BET</small></button>
+      <button class="cash-btn" id="btnCash" disabled><span data-i18n="btn.cashout">CASH OUT</span><small id="cashVal">—</small></button>
+    </footer>
+
+    <div class="loader" id="loader">
+      <div class="loader-title"><span class="b1">FRUIT</span><span class="b2">SLASH</span></div>
+      <div class="loader-bar"><i id="loaderFill"></i></div>
+      <div class="loader-text" id="loaderText" data-i18n="load.loading">LOADING…</div>
+    </div>
+
+    <div class="modal" id="modalRules" hidden>
+      <div class="sheet"><div class="sheet-head"><h2 data-i18n="rules.title">HOW TO PLAY</h2><label class="lang-pick"><span data-i18n="rules.language">Language</span><select id="langSel"></select></label><button class="x" data-close>×</button></div><div class="sheet-body" id="rulesBody"></div></div>
+    </div>
+
+    <div class="modal" id="modalFair" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="fair.title">PROVABLY FAIR</h2><button class="x" data-close>×</button></div>
+        <div class="sheet-body">
+          <p class="muted" data-i18n-html="fair.intro"></p>
+          <div class="kv"><span data-i18n="fair.server_hash">Server seed (SHA-256)</span><code id="pfHash">—</code></div>
+          <div class="kv"><span data-i18n="fair.client_seed">Client seed</span><div class="inline"><input id="pfClient" maxlength="64" spellcheck="false"><button class="pill-btn" id="pfRotate" data-i18n="fair.rotate">ROTATE &amp; REVEAL</button></div></div>
+          <div class="kv"><span data-i18n="fair.nonce">Next round nonce</span><code id="pfNonce">—</code></div>
+          <div id="pfRevealed" class="revealed" hidden></div>
+          <h3 data-i18n="fair.verify_title">VERIFY A WAVE</h3>
+          <div class="verify">
+            <label><span data-i18n="fair.server_seed">Server seed</span><input id="vServer" spellcheck="false" data-i18n-ph="fair.server_ph" placeholder="revealed server seed"></label>
+            <label><span data-i18n="fair.client_seed">Client seed</span><input id="vClient" spellcheck="false"></label>
+            <label><span data-i18n="fair.nonce_short">Nonce</span><input id="vNonce" type="number" min="0" value="0"></label>
+            <label><span data-i18n="fair.wave">Wave #</span><input id="vShot" type="number" min="0" value="0"></label>
+            <button class="pill-btn" id="vGo" data-i18n="fair.verify">VERIFY</button>
+          </div>
+          <pre class="vout" id="vOut"></pre>
+          <h3 data-i18n="fair.session">THIS SESSION</h3>
+          <div class="history" id="pfHistory"><p class="muted" data-i18n="fair.no_rounds">No rounds yet.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="modalSkins" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2 data-i18n="skins.title">BLADES</h2><button class="x" data-close>×</button></div>
+        <div class="sheet-body"><p class="muted" data-i18n="skins.text">A new blade trail every 100 cleared waves. Blades are cosmetic and never change the odds.</p><div class="skins" id="skinsGrid"></div></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+  </div>
+  <script src="/games/common/i18n.js"></script>
+  <script src="/games/fruit_slash/sfx.js"></script>
+  <script src="/games/fruit_slash/scene.js"></script>
+  <script src="/games/fruit_slash/game.js"></script>
+</body>
+</html>

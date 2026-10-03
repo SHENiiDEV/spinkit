@@ -6,6 +6,7 @@ const { RgsEngine } = require('../engine/rgs');
 const merchants = require('./merchants');
 const players = require('./players');
 const jackpots = require('./jackpots');
+const exclusive = require('./exclusive-service');
 const { currencyInfo } = require('./currency');
 const { ApiError, bad, notFound } = require('./errors');
 const { REFILL_AMOUNT } = require('../config');
@@ -80,7 +81,7 @@ function withCap(game, maxWinX) {
  * Creates a game session and returns the launch URL.
  * test: { rtp_profile, force_feature } — QA options, allowed only for players flagged as test.
  */
-function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MIN, test = null, lobbyUrl = null, clientIp = null, actor = 'api' }) {
+function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MIN, test = null, lobbyUrl = null, clientIp = null, lang = null, actor = 'api' }) {
   if (merchant.status !== 'active') throw new ApiError(403, 'MERCHANT_SUSPENDED', 'Merchant is suspended');
   if (player.status !== 'active') throw new ApiError(403, 'PLAYER_BLOCKED', 'Player is blocked');
   const game = GAMES_CATALOG[gameId];
@@ -110,19 +111,21 @@ function launch({ merchant, player, gameId, baseUrl, ttlMinutes = SESSION_TTL_MI
     testMode = true;
   }
 
+  const language = merchants.validateLang(lang) || merchant.default_lang || null;
   const token = crypto.randomUUID();
   const ttl = Math.max(5, Math.min(24 * 60, Number(ttlMinutes) || SESSION_TTL_MIN));
   const { expires_at: expiresAt } = dbService.createSessionToken(token, player.id, gameId, ttl, {
     merchant_id: merchant.id, rtp_profile: rtpProfile, test_mode: testMode, force_feature: forceFeature,
     guaranteed_win: guaranteedWin, wild_x1000: wildX1000,
-    lobby_url: lobbyUrl || merchant.lobby_url || null, client_ip: clientIp
+    lobby_url: lobbyUrl || merchant.lobby_url || null, client_ip: clientIp, lang: language
   });
   if (testMode) dbService.audit(actor, 'session.test_create', `player:${player.id}`, { game_id: gameId, rtp_profile: rtpProfile, force_feature: forceFeature, guaranteed_win: guaranteedWin, wild_x1000: wildX1000 });
 
   return {
     token,
     game_id: gameId,
-    launch_url: `${baseUrl}/games/${game.slug}/?token=${token}`,
+    launch_url: `${baseUrl}/games/${game.slug}/?token=${token}${language ? `&lang=${language}` : ''}`,
+    lang: language,
     expires_at: new Date(expiresAt).toISOString(),
     test_mode: testMode,
     rtp: testMode && rtpProfile ? `${rtpProfile.toFixed(2)}%` : eff.rtp
@@ -143,6 +146,7 @@ function loadSession(token) {
 // ------------------------------------------------------------------ init
 function init(token) {
   const { session, merchant, player } = loadSession(token);
+  if (exclusive.isExclusive(GAMES_CATALOG[session.game_id])) return exclusive.init(token);
   const eff = merchants.effective(merchant, session.game_id, undefined, session);
   const gameState = dbService.getGameState(player.id, session.game_id);
   const bonus = parseBonus(gameState.active_bonus_data);
@@ -177,6 +181,7 @@ function spin(token, betAmount, buyFeature = false) {
   const { session, merchant, player } = loadSession(token);
   const eff = merchants.effective(merchant, session.game_id, undefined, session);
   const game = withCap(eff.game, eff.max_win_x);
+  if (exclusive.isExclusive(game)) throw bad('USE_ACTION_ENDPOINT', 'This SpinKit Exclusive game is played with POST /api/v1/rgs/action');
 
   return dbService.tx(() => {
     const user = players.byId(player.id);
@@ -302,4 +307,9 @@ function refill(token) {
   return { status: 'success', balance: u.balance, added: REFILL_AMOUNT };
 }
 
-module.exports = { publicGameConfig, launch, init, spin, refill, loadSession };
+/** SpinKit Exclusive round actions (start / shoot / cashout / seed / skin). */
+function action(token, body) {
+  return exclusive.action(token, body);
+}
+
+module.exports = { publicGameConfig, launch, init, spin, refill, loadSession, action };

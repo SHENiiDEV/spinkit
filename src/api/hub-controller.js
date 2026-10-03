@@ -30,7 +30,7 @@ class HubController {
    * Generates a launch URL with a cryptographically secure session token.
    */
   static handleLaunch(reqBody, hostHeader) {
-    const { user_id, game_id } = reqBody;
+    const { user_id, game_id, lang } = reqBody;
     if (!user_id || !game_id) {
       return { status: 400, body: { error: 'INVALID_REQUEST', message: 'user_id and game_id are required' } };
     }
@@ -43,7 +43,7 @@ class HubController {
     const host = hostHeader || 'localhost:3000';
     const protocol = host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https';
     return wrap(() => {
-      const r = gameService.launch({ merchant: merchants.get(DEMO_MERCHANT), player, gameId: game_id, baseUrl: `${protocol}://${host}`, ttlMinutes: 60, actor: 'public-lobby' });
+      const r = gameService.launch({ merchant: merchants.get(DEMO_MERCHANT), player, gameId: game_id, baseUrl: `${protocol}://${host}`, ttlMinutes: 60, lang, actor: 'public-lobby' });
       return { status: 'success', launch_url: r.launch_url, token: r.token, game_slug: game_id, user_id: player.id, expires_at: r.expires_at };
     });
   }

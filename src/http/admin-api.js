@@ -49,6 +49,7 @@ function register(router) {
   router.get('/api/admin/meta', auth, () => ({
     status: 'success',
     rtp_profiles: RTP_PROFILES,
+    langs: merchants.LANGS,
     qa_rtp_range: QA_RTP_RANGE,
     games: Object.values(GAMES_CATALOG).map((g) => ({ id: g.id, name: g.name, mechanic: g.mechanic, category: g.category, collection: collectionOf(g), rtp: g.rtp, template: g.skin_of || g.id })),
     collections: Object.values(COLLECTIONS),
@@ -128,7 +129,7 @@ function register(router) {
     const m = merchants.mustGet(u.merchant_id);
     const r = gameService.launch({
       merchant: m, player: u, gameId: ctx.body.game_id, baseUrl: ctx.baseUrl, ttlMinutes: ctx.body.ttl_minutes || 120,
-      test: { rtp_profile: ctx.body.rtp_profile, force_feature: ctx.body.force_feature }, clientIp: ctx.ip, actor: ctx.actor
+      test: { rtp_profile: ctx.body.rtp_profile, force_feature: ctx.body.force_feature }, clientIp: ctx.ip, lang: ctx.body.lang, actor: ctx.actor
     });
     return { status: 'success', session: r };
   });
