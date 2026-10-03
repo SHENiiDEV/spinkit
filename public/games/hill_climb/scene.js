@@ -577,12 +577,16 @@
       // terrain
       const x0 = this.cam.x - W / ppm / 2 - 2;
       const x1 = this.cam.x + W / ppm / 2 + 2;
-      const stepM = Math.max(0.15, 2.5 / ppm);
+      // sample on a fixed world grid (never relative to the camera or the zoom), so the outline does not shimmer
+      const stepM = RES;
+      const gx0 = Math.floor(x0 / stepM) * stepM;
+      const samples = [];
+      for (let x = gx0; x <= x1 + stepM; x += stepM) samples.push(x);
       // dirt body
       ctx.beginPath();
-      ctx.moveTo(X(x0), H + 10);
-      for (let x = x0; x <= x1; x += stepM) ctx.lineTo(X(x), Y(this.groundY(x)));
-      ctx.lineTo(X(x1), H + 10);
+      ctx.moveTo(X(gx0), H + 10);
+      for (const x of samples) ctx.lineTo(X(x), Y(this.groundY(x)));
+      ctx.lineTo(X(samples[samples.length - 1]), H + 10);
       ctx.closePath();
       const dirt = ctx.createLinearGradient(0, Y(hill.yE + 4), 0, H);
       dirt.addColorStop(0, bio.dirt);
@@ -595,8 +599,8 @@
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(X(h.gapX0), Y(h.lipY));
-        for (let x = h.gapX0; x <= h.landX0; x += stepM) ctx.lineTo(X(x), Y(this.groundY(x)));
-        ctx.lineTo(X(h.landX0), Y(h.lipY - 1.1));
+        for (let i = Math.ceil((h.gapX0 - h.x0) / RES); h.x0 + i * RES <= h.landX0; i++) ctx.lineTo(X(h.x0 + i * RES), Y(h.ys[Math.min(h.n, i)]));
+        ctx.lineTo(X(h.landX0), Y(this.groundY(h.landX0)));
         ctx.closePath();
         const g = ctx.createLinearGradient(0, Y(h.lipY), 0, Y(h.V - 9));
         g.addColorStop(0, 'rgba(30,18,10,0.35)');
@@ -605,20 +609,32 @@
         ctx.fill();
         ctx.restore();
       }
-      // dirt speckles
+      // dirt speckles (world-anchored)
       ctx.fillStyle = 'rgba(0,0,0,0.12)';
-      for (let x = Math.floor(x0); x <= x1; x += 1.3) {
+      for (let x = Math.ceil(x0 / 1.3) * 1.3; x <= x1; x += 1.3) {
         const gy = this.groundY(x);
-        const r1 = Math.sin(x * 12.9898) * 43758.5453;
+        const r1 = Math.sin(Math.round(x / 1.3) * 12.9898) * 43758.5453;
         const f = r1 - Math.floor(r1);
         ctx.beginPath(); ctx.arc(X(x + f), Y(gy - 0.8 - f * 3), ppm * (0.08 + f * 0.1), 0, TAU); ctx.fill();
       }
-      // grass edge
+      // grass edge: one stroke per stretch of solid ground, ending exactly at the lip and starting exactly at the landing
       ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.beginPath();
-      for (let x = x0; x <= x1; x += stepM) {
+      let pen = false;
+      for (const x of samples) {
         const h = this.hillAtX(x);
-        if (h && x > h.gapX0 + 0.3 && x < h.landX0 - 0.3) { ctx.moveTo(X(x), Y(this.groundY(x))); continue; }
+        const inGap = h && x > h.gapX0 && x < h.landX0;
+        if (inGap) {
+          if (pen) { ctx.lineTo(X(h.gapX0), Y(this.groundY(h.gapX0))); pen = false; }
+          continue;
+        }
+        if (!pen) {
+          const hp = this.hillAtX(x - stepM);
+          if (hp && x - stepM > hp.gapX0 && x - stepM < hp.landX0) ctx.moveTo(X(hp.landX0), Y(this.groundY(hp.landX0)));
+          else ctx.moveTo(X(x), Y(this.groundY(x)));
+          pen = true;
+        }
         ctx.lineTo(X(x), Y(this.groundY(x)));
       }
       ctx.strokeStyle = (hill.biome || bio).grassDark;
