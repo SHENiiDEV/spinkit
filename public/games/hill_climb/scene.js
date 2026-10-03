@@ -208,6 +208,22 @@
       return lerp(h.ys[Math.min(h.n, i0)], h.ys[Math.min(h.n, i0 + 1)], t);
     }
 
+    /**
+     * The surface the wheels rest on: the real ground, except over a jump gap, where the lip and the landing
+     * slope are extended as their tangents — so a wheel that already hangs over the gap never drops into it.
+     */
+    supportY(x) {
+      const h = this.hillAtX(x);
+      if (!h || x <= h.gapX0 || x >= h.landX0) return this.groundY(x);
+      const d = 0.4;
+      if (x - h.gapX0 < h.landX0 - x) {
+        const s = (this.groundY(h.gapX0) - this.groundY(h.gapX0 - d)) / d;
+        return this.groundY(h.gapX0) + s * (x - h.gapX0);
+      }
+      const s = (this.groundY(h.landX0 + d) - this.groundY(h.landX0)) / d;
+      return this.groundY(h.landX0) - s * (h.landX0 - x);
+    }
+
     groundAng(x) {
       const d = 0.6;
       return Math.atan2(this.groundY(x + d) - this.groundY(x - d), 2 * d);
@@ -242,9 +258,9 @@
       };
       const [T, lf] = arcs[kind] || arcs.clean;
       const xL = h.lipX;
-      const yL = h.lipY + this.V.r;
+      const yL = h.lipY + this.V.r / Math.cos(Math.atan2(this.groundY(h.lipX) - this.groundY(h.lipX - 0.4), 0.4));
       const xT = h.landX0 + lf * landLen;
-      const yT = this.groundY(xT) + this.V.r;
+      const yT = this.groundY(xT) + this.V.r / Math.max(0.6, Math.cos(this.groundAng(xT)));
       const vx = (xT - xL) / T;
       const vy = (yT - yL + 0.5 * G * T * T) / T;
       const slopeT = this.groundAng(xT);
@@ -273,7 +289,7 @@
       const inp = this.input;
       if (this.state === 'parked' || this.state === 'stopping' || this.state === 'drive' || this.state === 'rollback') {
         const prevX = c.x;
-        const slope = this.groundAng(c.x);
+        const slope = Math.atan2(this.supportY(c.x + 0.6) - this.supportY(c.x - 0.6), 1.2);
         const h = this.hill;
         let a = -G * Math.sin(slope) * 0.92 - 0.006 * c.v * Math.abs(c.v);
         if (Math.abs(c.v) > 0.05) a -= 0.5 * Math.sign(c.v);
@@ -339,14 +355,18 @@
         // body follows the ground under both wheels, with suspension
         const xR = c.x - (V.wb / 2) * Math.cos(c.ang);
         const xF = c.x + (V.wb / 2) * Math.cos(c.ang);
-        const yR = this.groundY(xR);
-        const yF = this.groundY(xF);
+        const yR = this.supportY(xR);
+        const yF = this.supportY(xF);
         let target = Math.atan2(yF - yR, xF - xR);
         if (driving && inp.gas && engineOn && c.v > 1) target += 0.05; // a hint of wheelie
         if (driving && inp.brake && c.v > 1) target -= 0.04;
         c.angV += (wrapPi(target - c.ang) * 160 - c.angV * 16) * dt;
         c.ang += c.angV * dt;
-        const yTarget = (yR + yF) / 2 + V.r;
+        // wheel centres sit one radius away from the surface along its normal, not straight above it
+        const lift = (sl) => V.r / Math.max(0.6, Math.cos(sl));
+        const slR = Math.atan2(this.supportY(xR + 0.3) - this.supportY(xR - 0.3), 0.6);
+        const slF = Math.atan2(this.supportY(xF + 0.3) - this.supportY(xF - 0.3), 0.6);
+        const yTarget = (yR + lift(slR) + yF + lift(slF)) / 2;
         const dy = yTarget - c.y;
         c.susV += (-c.sus * 180 - c.susV * 12) * dt + dy * 0.0; // eslint-friendly
         c.sus += c.susV * dt;
