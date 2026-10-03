@@ -368,4 +368,61 @@ console.log('✔ Test 7: Fruit Slash — committed cut, fair lanes, EV-neutral w
 }
 console.log('✔ Test 8: operator settings — bet ladder above 100.00, helmet saves per round, session language');
 
+// ------------------------------------------------------------------ 9. Hill Climb Rush: crash kinds, jerrycan, trick bets
+{
+  const hc = GAMES_CATALOG.hill_climb;
+  const hcfg = hc.crash;
+  assert(hc && hc.kind === 'exclusive' && hc.mechanic === 'step_crash');
+  assert.deepStrictEqual(sc.ladder(hc, 'jeep'), [1.05, 1.19, 1.4, 1.75, 2.34, 3.34, 5.14, 8.56, 17.12, 42.8], 'GDD jeep ladder');
+  // crash kind = the lethal part of the same float
+  let flips = 0; let n = 0;
+  for (let i = 0; i < 20000; i++) {
+    const u = 0.8 + (i / 20000) * 0.2;
+    const k = sc.crashOf(hcfg, 0.8, u);
+    assert(k === 'flip' || k === 'fuel');
+    n++; if (k === 'flip') flips++;
+  }
+  assert(Math.abs(flips / n - 0.6) < 0.001, 'flip share 60%');
+  assert.strictEqual(sc.crashOf(hcfg, 0.8, 0.5), null, 'no crash kind on a clear');
+  assert.strictEqual(sc.crashOf(cfg, 0.8, 0.9), null, 'games without crash kinds are unchanged');
+  // jerrycan covers only the fuel crash: price = P(fuel) x 0.7 x multiplier x bet / rtp
+  const r1 = { bet: 1000, level: 1, multiplier: 1.0496, prev_multiplier: 0.965, saves: 0 };
+  assert.strictEqual(sc.helmetPrice(hcfg, r1, 0.88), Math.ceil(1000 * 0.7 * 1.0496 * 0.12 * 0.4 / 0.965));
+  assert.strictEqual(sc.helmetPrice(cfg, { ...r1 }, 0.88), Math.ceil(1000 * 0.5 * 1.0496 * 0.12 / 0.965), 'apple helmet still covers every lethal shot');
+  const odds = sc.sideOdds(hcfg, 0.92, 0);
+  assert.deepStrictEqual(odds, { backflip: 14.98, air_time: 6.55, coin_chest: 8.06, empty_tank: 4.19, rollcage: 20.1 });
+
+  // live rounds: saves only on an empty tank, trick bets settle on the right events
+  const m = merchants.get(1);
+  const player = dbService.getUser(49106);
+  const t = gameService.launch({ merchant: m, player, gameId: 'hill_climb', baseUrl: 'http://x' }).token;
+  const init = gameService.init(t);
+  assert.strictEqual(init.game_config.crash.crashes.flip, 0.6);
+  assert.strictEqual(init.game_config.crash.hill_names.length, 10);
+  const seen = { saved: 0, flipWithCan: 0, rollcage: 0, airOnFlip: 0 };
+  for (let i = 0, r = null; i < 1500 && (seen.saved < 3 || seen.flipWithCan < 3 || seen.rollcage < 2 || seen.airOnFlip < 1); i++) {
+    if (!r || !r.round) r = gameService.action(t, { action: 'start', bet: 200, mode: 'bike' });
+    const q = r.next;
+    const can = q.helmet_price != null;
+    const sides = {};
+    if (q.side_bets.rollcage) sides.rollcage = 20;
+    if (q.side_bets.air_time) sides.air_time = 20;
+    r = gameService.action(t, { action: 'shoot', helmet: can, side_bets: sides, expect_shot: q.shot_index });
+    const s = r.shot;
+    if (s.outcome === 'lethal') {
+      assert(s.crash === 'flip' || s.crash === 'fuel', 'a crash has a kind');
+      if (can) assert.strictEqual(s.saved, s.crash === 'fuel', 'the jerrycan saves only an empty tank');
+      if (s.saved) seen.saved++;
+      if (can && s.crash === 'flip') { seen.flipWithCan++; assert(!r.round, 'a flip ends the round even with a jerrycan'); }
+    }
+    for (const b of s.side_bets) {
+      if (b.id === 'rollcage') { assert.strictEqual(b.won, s.crash === 'flip'); if (b.won) seen.rollcage++; }
+      if (b.id === 'air_time') { assert.strictEqual(b.won, s.outcome === 'big_air' || s.outcome === 'backflip'); if (s.outcome === 'backflip' && b.won) seen.airOnFlip++; }
+    }
+    if (r.round && r.round.level >= 4) r = gameService.action(t, { action: 'cashout' });
+  }
+  assert(seen.saved >= 3 && seen.flipWithCan >= 3 && seen.rollcage >= 2 && seen.airOnFlip >= 1, JSON.stringify(seen));
+}
+console.log('✔ Test 9: Hill Climb Rush — flip / fuel crashes, jerrycan covers only fuel, trick bets, GDD ladder');
+
 console.log('All SpinKit Exclusive tests passed.');
